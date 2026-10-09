@@ -81,19 +81,50 @@ flowchart LR
 
 ## 三、极速一键部署指南
 
+> 💡 **中国大陆网络专属优化**：本套件已深度集成大陆境内加速节点（ghfast、ghproxy、jsDelivr），脚本内部具备自动网络测速与故障无缝转移机制。国内设备无需科学上网即可秒级拉取与部署。
+
+---
+
 ### 1. 境外 VPS 部署服务端 (Server)
 
-在海外服务器（推荐 Debian 12 或 Ubuntu 22.04/24.04）上以 `root` 权限执行通用安装脚本：
+以 `root` 权限在服务器上执行一键安装脚本（推荐 Debian 12 或 Ubuntu 22.04/24.04）：
 
+#### 🇨🇳 中国大陆服务器 / 境内网络加速一键安装（免翻墙 · 推荐）：
+```bash
+# 推荐通道 1 (ghfast 极速通道)
+apt-get update && apt-get install -y curl
+bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh)
+
+# 备用通道 2 (ghproxy 国内镜像)
+apt-get update && apt-get install -y curl
+bash <(curl -fsSL https://ghproxy.net/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh)
+
+# 备用通道 3 (jsDelivr 全球加速 CDN)
+apt-get update && apt-get install -y curl
+bash <(curl -fsSL https://fastly.jsdelivr.net/gh/zhengwuji/de_GWD@main/install.sh)
+
+# 备用通道 4 (wget 方式，适合未预装 curl 的环境)
+bash <(wget -qO- https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh)
+```
+
+#### 🌐 境外 VPS 官方直连一键安装（海外节点原生）：
 ```bash
 apt-get update && apt-get install -y curl
 bash <(curl -fsSL https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh)
 ```
-> *若遇网络延迟，可使用加速通道：`bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh)`*
 
-#### 交互安装流程：
-1. 菜单输入 `1` 选择 **「部署服务端」**；
-2. 设定监听端口（支持回车使用推荐默认值）：
+#### ⚡ 服务端一键免交互极速启动：
+```bash
+# 中国大陆加速免交互部署服务端
+bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh) server
+
+# 境外官方直连免交互部署服务端
+bash <(curl -fsSL https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh) server
+```
+
+#### 交互安装流程说明：
+1. 运行命令后菜单输入 `1` 选择 **「部署服务端」**；
+2. 设定监听端口（支持直接回车使用推荐默认值）：
    - `VLESS-REALITY` 端口：默认 `443`
    - `VLESS-xhttp` 端口：默认 `20081`
    - `VLESS-WS` 端口：默认 `20082`
@@ -109,10 +140,35 @@ bash <(curl -fsSL https://raw.githubusercontent.com/zhengwuji/de_GWD/main/instal
 
 ### 2. 本地设备部署客户端 (Client / 透明网关)
 
-在本地软路由、小主机或 Linux 虚拟机中执行相同的安装脚本：
+客户端通常运行在家庭、办公室局域网内的软路由、小主机、工控机或虚拟机中。在未配置翻墙前，设备处于纯正的中国大陆网络环境，**请直接复制以下中国大陆免翻墙一键安装命令**：
 
+#### 🇨🇳 中国大陆本地设备一键安装（默认推荐 · 免翻墙直连）：
+```bash
+# 推荐通道 1 (ghfast 极速通道 · 最快)
+bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh)
+
+# 备用通道 2 (ghproxy 国内镜像)
+bash <(curl -fsSL https://ghproxy.net/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh)
+
+# 备用通道 3 (jsDelivr 全球加速 CDN)
+bash <(curl -fsSL https://fastly.jsdelivr.net/gh/zhengwuji/de_GWD@main/install.sh)
+
+# 备用通道 4 (wget 方式，适合未预装 curl 系统)
+bash <(wget -qO- https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh)
+```
+
+#### 🌐 境外 / 已有前置代理设备直连安装：
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh)
+```
+
+#### ⚡ 客户端一键免交互极速启动：
+```bash
+# 中国大陆加速免交互部署客户端
+bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh) client
+
+# 境外官方直连免交互部署客户端
+bash <(curl -fsSL https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh) client
 ```
 
 #### 部署方式一：命令行终端极速导入
@@ -172,6 +228,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/zhengwuji/de_GWD/main/instal
 
 ## 六、常用运维与管理指令速查表
 
+### 1. 本地终端快捷指令（安装完成后直接使用）
 | 操作功能 | 终端快捷指令 | 详细说明 |
 | :--- | :--- | :--- |
 | **调出服务端控制菜单** | `degwd` 或 `degwd-server` | 管理服务端节点、端口、BBR 状态与 Argo 隧道 |
@@ -180,6 +237,25 @@ bash <(curl -fsSL https://raw.githubusercontent.com/zhengwuji/de_GWD/main/instal
 | **客户端网关状态检查** | `systemctl status degwd-client` | 检查客户端 TUN 虚拟网卡状态 |
 | **修改 Web 面板管理密码** | `degwd`（或 `degwd-client`）-> 选项 `6` | 交互式修改 Web 控制面板密码（双重哈希存储） |
 | **彻底干净卸载并还原环境** | `degwd`（或 `degwd-client`）-> 卸载选项 | 彻底清除所有进程、端口、开机自启与防火墙 NAT 规则 |
+
+### 2. 远程一键维护命令（支持中国大陆与境外双通道）
+若设备尚未注册系统命令，或需远程直接执行单项维护任务，可直接执行：
+
+| 维护操作 | 🇨🇳 中国大陆极速一键命令 | 🌐 境外 / 官方直连一键命令 |
+| :--- | :--- | :--- |
+| **一键重装 / 覆盖更新** | `bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh)` | `bash <(curl -fsSL https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh)` |
+| **一键更改 Web 面板密码** | `bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh) 3` | `bash <(curl -fsSL https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh) 3` |
+| **一键彻底干净卸载 de_GWD** | `bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh) 4` | `bash <(curl -fsSL https://raw.githubusercontent.com/zhengwuji/de_GWD/main/install.sh) 4` |
+
+### 3. 生态联动：argosbx（甬哥全套协议脚本）一键部署命令
+de_GWD 双端均原生支持导入甬哥 argosbx 全套协议节点：
+```bash
+# 🇨🇳 中国大陆加速安装 (argosbx)
+vlpt="" xhpt="" vwpt="" hypt="" alns="y" argo="vwpt" bash <(wget -qO- https://ghfast.top/https://raw.githubusercontent.com/yonggekkk/argosbx/main/argosbx.sh)
+
+# 🌐 境外 VPS 原生直连安装 (argosbx)
+vlpt="" xhpt="" vwpt="" hypt="" alns="y" argo="vwpt" bash <(wget -qO- https://raw.githubusercontent.com/yonggekkk/argosbx/main/argosbx.sh)
+```
 
 ---
 

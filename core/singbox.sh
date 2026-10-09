@@ -38,19 +38,30 @@ install_singbox_core() {
     local clean_ver="${latest_tag#v}"
     local filename="sing-box-${clean_ver}-linux-${sb_arch}.tar.gz"
     local dl_url="https://github.com/SagerNet/sing-box/releases/download/${latest_tag}/${filename}"
-    local ghproxy_url="https://ghfast.top/${dl_url}"
 
     msg_info "正在下载 Sing-Box 核心: ${latest_tag} (${sb_arch})..."
     local tmp_dir
     tmp_dir="$(mktemp -d)"
 
-    if ! curl -fsSL --max-time 45 "$dl_url" -o "${tmp_dir}/sb.tar.gz" 2>/dev/null; then
-        msg_warn "官方源下载超时，切换加速镜像下载..."
-        curl -fsSL --max-time 45 "$ghproxy_url" -o "${tmp_dir}/sb.tar.gz" || {
-            msg_err "下载 Sing-Box 核心失败，请检查网络连接！"
-            rm -rf "$tmp_dir"
-            return 1
-        }
+    local mirrors=(
+        "$dl_url"
+        "https://ghfast.top/${dl_url}"
+        "https://ghproxy.net/${dl_url}"
+    )
+
+    local downloaded=false
+    for u in "${mirrors[@]}"; do
+        if curl -fsSL --connect-timeout 8 --max-time 60 "$u" -o "${tmp_dir}/sb.tar.gz" 2>/dev/null; then
+            downloaded=true
+            break
+        fi
+        msg_warn "下载连接超时，尝试下一镜像节点..."
+    done
+
+    if [[ "$downloaded" != "true" ]]; then
+        msg_err "下载 Sing-Box 核心失败，请检查网络连接！"
+        rm -rf "$tmp_dir"
+        return 1
     fi
 
     tar -zxf "${tmp_dir}/sb.tar.gz" -C "$tmp_dir"

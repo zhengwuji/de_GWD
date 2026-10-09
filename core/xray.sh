@@ -35,12 +35,14 @@ install_xray_core() {
     local tmp_dir
     tmp_dir="$(mktemp -d)"
 
-    # Official release & mirror links
+    # Official release & multi-mirror links
     local dl_urls=(
         "https://github.com/yonggekkk/argosbx/releases/download/argosbx/xray-${cpu}"
         "https://ghfast.top/https://github.com/yonggekkk/argosbx/releases/download/argosbx/xray-${cpu}"
+        "https://ghproxy.net/https://github.com/yonggekkk/argosbx/releases/download/argosbx/xray-${cpu}"
         "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${xarch}.zip"
         "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${xarch}.zip"
+        "https://ghproxy.net/https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${xarch}.zip"
     )
 
     local success=false
@@ -97,8 +99,10 @@ install_cloudflared() {
     local dl_urls=(
         "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}"
         "https://ghfast.top/https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}"
+        "https://ghproxy.net/https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}"
         "https://github.com/yonggekkk/argosbx/releases/download/argosbx/cloudflared-${cpu}"
         "https://ghfast.top/https://github.com/yonggekkk/argosbx/releases/download/argosbx/cloudflared-${cpu}"
+        "https://ghproxy.net/https://github.com/yonggekkk/argosbx/releases/download/argosbx/cloudflared-${cpu}"
     )
 
     local tmp_bin

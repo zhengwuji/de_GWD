@@ -32,17 +32,47 @@ if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/server" && -f "${SCRIPT_DIR}/core/en
     fi
 else
     # Remote raw installation from repository
-    echo -e "\033[1;32m[>>]\033[0m 从 GitHub 拉取 de_GWD NextGen 最新文件..."
-    REPO_RAW="https://raw.githubusercontent.com/zhengwuji/de_GWD/main"
-    MIRROR_RAW="https://ghfast.top/${REPO_RAW}"
+    echo -e "\033[1;32m[>>]\033[0m 拉取 de_GWD NextGen 最新组件..."
+    
+    # 智能连通性探测：若直连 GitHub 较慢或在中国大陆网络，优先启用国内高速加速镜像
+    USE_CN_MIRROR=0
+    if ! curl -fsSL --connect-timeout 2 --max-time 3 "https://raw.githubusercontent.com/zhengwuji/de_GWD/main/version.php" >/dev/null 2>&1; then
+        USE_CN_MIRROR=1
+        echo -e "\033[1;33m[提示]\033[0m 检测到 GitHub 直连受限或位于中国大陆网络，已智能启用国内高速镜像源..."
+    fi
+
+    # 镜像池列表（按优先级依次故障自动转移）
+    if [[ $USE_CN_MIRROR -eq 1 ]]; then
+        REPO_BASES=(
+            "https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main"
+            "https://ghproxy.net/https://raw.githubusercontent.com/zhengwuji/de_GWD/main"
+            "https://cdn.jsdelivr.net/gh/zhengwuji/de_GWD@main"
+            "https://fastly.jsdelivr.net/gh/zhengwuji/de_GWD@main"
+            "https://raw.githubusercontent.com/zhengwuji/de_GWD/main"
+        )
+    else
+        REPO_BASES=(
+            "https://raw.githubusercontent.com/zhengwuji/de_GWD/main"
+            "https://ghfast.top/https://raw.githubusercontent.com/zhengwuji/de_GWD/main"
+            "https://ghproxy.net/https://raw.githubusercontent.com/zhengwuji/de_GWD/main"
+            "https://cdn.jsdelivr.net/gh/zhengwuji/de_GWD@main"
+        )
+    fi
 
     dl() {
         local rel="$1"
         local target="${DEGWD_INSTALL_DIR}/${rel}"
         mkdir -p "$(dirname "$target")"
-        if ! curl -fsSL --max-time 15 "${REPO_RAW}/${rel}" -o "$target" 2>/dev/null; then
-            curl -fsSL --max-time 15 "${MIRROR_RAW}/${rel}" -o "$target"
-        fi
+        
+        for base in "${REPO_BASES[@]}"; do
+            local url="${base}/${rel}"
+            if curl -fsSL --connect-timeout 5 --max-time 20 "$url" -o "$target" 2>/dev/null; then
+                return 0
+            fi
+        done
+
+        echo -e "\033[1;31m[错误]\033[0m 拉取组件 ${rel} 失败，请检查网络！" >&2
+        return 1
     }
 
     dl "server"
