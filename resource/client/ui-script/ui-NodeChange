@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# de_GWD NextGen - Active Node Switcher (ui-NodeChange)
+# ==============================================================================
+
+readonly BASE="/opt/de_GWD"
+readonly CONF="${BASE}/0conf"
+readonly NUM="${1:-0}"
+
+if [[ ! -f "$CONF" ]]; then
+    exit 0
+fi
+
+# Update active node index in 0conf
+tmp_conf="$(mktemp)"
+jq --argjson idx "$NUM" '.update.v2node.index = $idx' "$CONF" > "$tmp_conf" && mv -f "$tmp_conf" "$CONF"
+chmod 666 "$CONF"
+
+# Trigger recompilation and reload
+/opt/de_GWD/ui-NodeSave r

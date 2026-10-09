@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# de_GWD NextGen - Server Manager (VLESS-REALITY + Hysteria 2)
+# ==============================================================================
+
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/ui.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/env.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/singbox.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/node.sh"
+
+check_root
+ensure_dirs
+
+# Interactive Server Installation Flow
+install_server_flow() {
+    draw_section "一键部署 de_GWD NextGen 服务端"
+    
+    install_prereqs
+    tune_kernel
+    install_singbox_core
+
+    printf "\n${C_B_WHITE}配置服务端监听端口与参数：${C_RESET}\n"
+
+    read -rp "  请输入 VLESS-REALITY 端口 [默认: 443]: " input_vless_port
+    local vless_port="${input_vless_port:-443}"
+
+    read -rp "  请输入 Hysteria 2 端口 [默认: 8443]: " input_hy2_port
+    local hy2_port="${input_hy2_port:-8443}"
+
+    printf "\n  ${C_CYAN}推荐伪装域名列表：${C_RESET}\n"
+    printf "    1. www.microsoft.com   (微软全球 CDN，高信任度)\n"
+    printf "    2. gateway.icloud.com   (苹果云网关，国内直连延迟极低)\n"
+    printf "    3. addons.mozilla.org  (火狐插件中心，TLS 握手标准)\n"
+    printf "    4. www.lovelive-anime.jp (境外原生 CDN)\n"
+    read -rp "  请选择伪装域名序号或直接输入自定义域名 [默认: 1]: " input_sni_choice
+    
+    local sni="www.microsoft.com"
+    case "$input_sni_choice" in
+        2) sni="gateway.icloud.com" ;;
+        3) sni="addons.mozilla.org" ;;
+        4) sni="www.lovelive-anime.jp" ;;
+        "") sni="www.microsoft.com" ;;
+        *) sni="$input_sni_choice" ;;
+    esac
+
+    local uuid
+    uuid="$(gen_uuid)"
+    local hy2_pass
+    hy2_pass="$(openssl rand -base64 12 | tr -d '=/+')"
+
+    msg_step "生成节点配置文件并配置 Systemd 守护服务..."
+    build_server_config "$vless_port" "$hy2_port" "$uuid" "$sni" "$hy2_pass"
+    setup_systemd_service "server"
+
+    print_node_info
+    printf "\n"
+    read -rp "按回车键返回主菜单..." _
+}
+
+# Change parameters & passwords flow
+change_credentials_flow() {
+    draw_section "更改账号密码与认证凭据"
+    if [[ ! -f "$DEGWD_ENV_FILE" ]]; then
+        msg_err "尚未安装服务端，请先执行安装！"
+        sleep 2
+        return 1
+    fi
+    # shellcheck disable=SC1090
+    source "$DEGWD_ENV_FILE"
+
+    printf "  1. 更改 VLESS-REALITY UUID (当前: %s)\n" "$SERVER_UUID"
+    printf "  2. 更改 Hysteria 2 密码   (当前: %s)\n" "$HY2_PASSWORD"
+    printf "  3. 更改伪装域名 SNI 并重新生成公私钥 (当前: %s)\n" "$REALITY_SNI"
+    printf "  4. 更改 Web 控制面板登录密码\n"
+    printf "  5. 修改服务端口 (VLESS: %s, Hy2: %s)\n" "$VLESS_PORT" "$HY2_PORT"
+    read -rp "请选择操作 [1-5]: " cred_choice
+
+    case "$cred_choice" in
+        1)
+            local new_uuid
+            new_uuid="$(gen_uuid)"
+            read -rp "请输入新 UUID [留空自动生成: ${new_uuid}]: " in_uuid
+            local final_uuid="${in_uuid:-$new_uuid}"
+            build_server_config "$VLESS_PORT" "$HY2_PORT" "$final_uuid" "$REALITY_SNI" "$HY2_PASSWORD"
+            systemctl restart degwd-server
+            msg_ok "VLESS UUID 已更新成功！"
+            ;;
+        2)
+            read -rp "请输入新 Hysteria 2 密码: " in_pass
+            if [[ -n "$in_pass" ]]; then
+                build_server_config "$VLESS_PORT" "$HY2_PORT" "$SERVER_UUID" "$REALITY_SNI" "$in_pass"
+                systemctl restart degwd-server
+                msg_ok "Hysteria 2 密码已更新成功！"
+            fi
+            ;;
+        3)
+            read -rp "请输入新伪装域名 SNI: " in_sni
+            if [[ -n "$in_sni" ]]; then
+                build_server_config "$VLESS_PORT" "$HY2_PORT" "$SERVER_UUID" "$in_sni" "$HY2_PASSWORD"
+                systemctl restart degwd-server
+                msg_ok "伪装域名与密钥已重新生成生效！"
+            fi
+            ;;
+        4)
+            change_web_password
+            ;;
+        5)
+            read -rp "新 VLESS 端口 [默认: ${VLESS_PORT}]: " in_vp
+            read -rp "新 Hy2 端口   [默认: ${HY2_PORT}]: " in_hp
+            build_server_config "${in_vp:-$VLESS_PORT}" "${in_hp:-$HY2_PORT}" "$SERVER_UUID" "$REALITY_SNI" "$HY2_PASSWORD"
+            systemctl restart degwd-server
+            msg_ok "端口已更新生效！"
+            ;;
+    esac
+
+    print_node_info
+    read -rp "按回车键返回主菜单..." _
+}
+
+# Uninstall flow
+uninstall_server_flow() {
+    draw_section "彻底干净卸载 de_GWD 服务端"
+    read -rp "确定要彻底干净卸载全部服务、防火墙规则、配置文件与残留吗？[y/N]: " confirm
+    if [[ "$confirm" =~ ^[yY]$ ]]; then
+        thorough_uninstall
+    else
+        msg_info "已取消卸载操作"
+    fi
+    sleep 2
+}
+
+# Network Diagnostics
+network_diagnostics() {
+    draw_section "系统网络与 BBR 状态诊断"
+    local os_info arch_info virt_info
+    os_info="$(detect_os)"
+    arch_info="$(detect_arch)"
+    virt_info="$(detect_virt)"
+    local default_cc
+    default_cc="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "未知")"
+    local default_qdisc
+    default_qdisc="$(sysctl -n net.core.default_qdisc 2>/dev/null || echo "未知")"
+    local ip_fwd
+    ip_fwd="$(sysctl -n net.ipv4.ip_forward 2>/dev/null || echo "0")"
+
+    printf "  %-22s : %s\n" "操作系统版本" "$os_info"
+    printf "  %-22s : %s\n" "CPU 架构" "$arch_info"
+    printf "  %-22s : %s\n" "虚拟化环境" "$virt_info"
+    printf "  %-22s : %s\n" "TCP 拥塞算法" "${C_B_GREEN}${default_cc}${C_RESET}"
+    printf "  %-22s : %s\n" "默认队列调度器" "${C_B_GREEN}${default_qdisc}${C_RESET}"
+    printf "  %-22s : %s\n" "IPv4 转发状态" "$([[ "$ip_fwd" == "1" ]] && echo "${C_B_GREEN}开启${C_RESET}" || echo "${C_B_RED}关闭${C_RESET}")"
+    printf "  %-22s : %s\n" "本机公网 IPv4" "$(get_public_ip)"
+
+    printf "\n"
+    read -rp "按回车键返回主菜单..." _
+}
+
+# Server Main Menu
+main_menu() {
+    while true; do
+        draw_banner "服务端 (Server)"
+
+        local s_status="not_installed"
+        if systemctl list-unit-files | grep -q "degwd-server.service"; then
+            if systemctl is-active degwd-server >/dev/null 2>&1; then
+                s_status="active"
+            else
+                s_status="inactive"
+            fi
+        fi
+
+        local vless_p="-"
+        local hy2_p="-"
+        if [[ -f "$DEGWD_ENV_FILE" ]]; then
+            # shellcheck disable=SC1090
+            source "$DEGWD_ENV_FILE"
+            vless_p="$VLESS_PORT"
+            hy2_p="$HY2_PORT"
+        fi
+
+        draw_status_row "服务端运行状态" "$s_status" "VLESS:${vless_p} | Hy2:${hy2_p}"
+        draw_status_row "BBR 拥塞控制" "$([[ "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)" == "bbr" ]] && echo "active" || echo "inactive")"
+        draw_line "─" 66
+
+        draw_menu_item "1" "一键安装 / 重新部署服务端" "(推荐)"
+        draw_menu_item "2" "查看当前节点详情与二维码"
+        draw_menu_item "3" "启动服务端守护进程"
+        draw_menu_item "4" "停止服务端守护进程"
+        draw_menu_item "5" "重启服务端"
+        draw_menu_item "6" "更改账号密码 / 认证凭据 / 端口"
+        draw_menu_item "7" "系统网络与 BBR 性能诊断"
+        draw_menu_item "8" "彻底干净卸载服务端与清理残留"
+        draw_menu_item "0" "退出脚本"
+        draw_line "─" 66
+
+        read -rp "请输入选项数字 [0-8]: " choice
+        case "$choice" in
+            1) install_server_flow ;;
+            2) 
+                print_node_info
+                read -rp "按回车键返回主菜单..." _
+                ;;
+            3)
+                systemctl start degwd-server
+                msg_ok "服务端已启动"
+                sleep 1
+                ;;
+            4)
+                systemctl stop degwd-server
+                msg_warn "服务端已停止"
+                sleep 1
+                ;;
+            5)
+                systemctl restart degwd-server
+                msg_ok "服务端已重启"
+                sleep 1
+                ;;
+            6) change_credentials_flow ;;
+            7) network_diagnostics ;;
+            8) uninstall_server_flow ;;
+            0)
+                printf "${C_GREEN}感谢使用 de_GWD NextGen，再见！${C_RESET}\n"
+                exit 0
+                ;;
+            *)
+                msg_warn "无效选项，请重新输入！"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+main_menu

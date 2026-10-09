@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# de_GWD NextGen - Node Collector & Compiler (ui-NodeSave)
+# ==============================================================================
+
+readonly BASE="/opt/de_GWD"
+readonly CONF="${BASE}/0conf"
+readonly CLIENT_JSON="${BASE}/etc/client.json"
+readonly SINGBOX_BIN="${BASE}/bin/sing-box"
+
+if [[ ! -f "$CONF" ]]; then
+    exit 0
+fi
+
+# Ensure directories
+mkdir -p "${BASE}/etc" "${BASE}/log"
+
+# Compile modern sing-box client configuration from 0conf
+compile_singbox_from_0conf() {
+    local node_count
+    node_count="$(jq '.v2node | length' "$CONF" 2>/dev/null || echo "0")"
+    if [[ "$node_count" -eq 0 ]]; then
+        return 0
+    fi
+
+    local active_idx
+    active_idx="$(jq -r '.update.v2node.index // 0' "$CONF" 2>/dev/null || echo "0")"
+    if [[ "$active_idx" -ge "$node_count" ]]; then
+        active_idx=0
+    fi
+
+    # Read selected active node parameters
+    local node_json
+    node_json="$(jq ".v2node[${active_idx}]" "$CONF" 2>/dev/null)"
+    
+    local domain proto name uuid path tls sni pbk sid flow hy2_pass insecure
+    domain="$(jq -r '.domain // ""' <<< "$node_json")"
+    proto="$(jq -r '.proto // ""' <<< "$node_json")"
+    name="$(jq -r '.name // "节点"' <<< "$node_json")"
+    uuid="$(jq -r '.uuid // ""' <<< "$node_json")"
+    path="$(jq -r '.path // ""' <<< "$node_json")"
+    tls="$(jq -r '.tls // ""' <<< "$node_json")"
+    sni="$(jq -r '.sni // ""' <<< "$node_json")"
+    pbk="$(jq -r '.pbk // ""' <<< "$node_json")"
+    sid="$(jq -r '.sid // ""' <<< "$node_json")"
+    flow="$(jq -r '.flow // "xtls-rprx-vision"' <<< "$node_json")"
+    hy2_pass="$(jq -r '.hy2_pass // ""' <<< "$node_json")"
+    insecure="$(jq -r '.insecure // "1"' <<< "$node_json")"
+
+    # Auto detect protocol if unspecified
+    if [[ -z "$proto" ]]; then
+        if [[ -n "$pbk" ]]; then
+            proto="vless"
+        elif [[ -n "$hy2_pass" && "$path" == "" ]]; then
+            proto="hysteria2"
+        else
+            proto="vmess"
+        fi
+    fi
+
+    local server_host="${domain%:*}"
+    local server_port="${domain##*:}"
+    if [[ "$server_host" == "$domain" ]]; then
+        server_port="443"
+    fi
+    if [[ -z "$sni" ]]; then
+        sni="${tls:-$server_host}"
+    fi
+
+    local proxy_outbound=""
+    if [[ "$proto" == "hysteria2" ]]; then
+        local is_insecure="true"
+        [[ "$insecure" == "0" ]] && is_insecure="false"
+        proxy_outbound=$(cat << EOF
+    {
+      "type": "hysteria2",
+      "tag": "proxy",
+      "server": "${server_host}",
+      "server_port": ${server_port},
+      "password": "${hy2_pass:-$uuid}",
+      "tls": {
+        "enabled": true,
+        "server_name": "${sni}",
+        "insecure": ${is_insecure}
+      }
+    }
+EOF
+)
+    elif [[ "$proto" == "vless" ]]; then
+        proxy_outbound=$(cat << EOF
+    {
+      "type": "vless",
+      "tag": "proxy",
+      "server": "${server_host}",
+      "server_port": ${server_port},
+      "uuid": "${uuid}",
+      "flow": "${flow:-xtls-rprx-vision}",
+      "tls": {
+        "enabled": true,
+        "server_name": "${sni}",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "${pbk}",
+          "short_id": "${sid}"
+        }
+      },
+      "packet_encoding": "xudp"
+    }
+EOF
+)
+    else
+        # VMess / Trojan fallback
+        proxy_outbound=$(cat << EOF
+    {
+      "type": "vmess",
+      "tag": "proxy",
+      "server": "${server_host}",
+      "server_port": ${server_port},
+      "uuid": "${uuid}",
+      "security": "auto",
+      "transport": {
+        "type": "ws",
+        "path": "${path}"
+      },
+      "tls": {
+        "enabled": true,
+        "server_name": "${sni}"
+      }
+    }
+EOF
+)
+    fi
+
+    # Output client.json
+    cat << EOF > "$CLIENT_JSON"
+{
+  "log": {
+    "disabled": false,
+    "level": "warn",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "dns-direct",
+        "address": "223.5.5.5",
+        "detour": "direct"
+      },
+      {
+        "tag": "dns-proxy",
+        "address": "https://1.1.1.1/dns-query",
+        "detour": "proxy"
+      },
+      {
+        "tag": "dns-block",
+        "address": "rcode://success"
+      }
+    ],
+    "rules": [
+      {
+        "outbound": "any",
+        "server": "dns-direct"
+      },
+      {
+        "geosite": "category-ads-all",
+        "server": "dns-block"
+      },
+      {
+        "geosite": "cn",
+        "server": "dns-direct"
+      }
+    ],
+    "final": "dns-proxy",
+    "strategy": "prefer_ipv4"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "degwd-tun",
+      "inet4_address": "172.19.0.1/30",
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "system",
+      "sniff": true
+    },
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "0.0.0.0",
+      "listen_port": 7890,
+      "sniff": true
+    }
+  ],
+  "outbounds": [
+${proxy_outbound},
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    },
+    {
+      "type": "dns",
+      "tag": "dns-out"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "protocol": "dns",
+        "outbound": "dns-out"
+      },
+      {
+        "geosite": "category-ads-all",
+        "outbound": "block"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "geosite": "cn",
+        "outbound": "direct"
+      },
+      {
+        "geoip": "cn",
+        "outbound": "direct"
+      }
+    ],
+    "final": "proxy",
+    "auto_detect_interface": true
+  }
+}
+EOF
+    chmod 600 "$CLIENT_JSON"
+}
+
+# Compile configuration
+compile_singbox_from_0conf
+
+# Also maintain nftables set if nftables exists
+if command -v nft >/dev/null 2>&1; then
+    mkdir -p "${BASE}/nftables"
+    >/opt/de_GWD/nftables/IP_V2NODE
+    jq -r '.v2node[].domain' "$CONF" 2>/dev/null | grep -v '^null$' | cut -d: -f1 | sort -u | while read -r line; do
+        [[ -n "$line" ]] && echo "$line" >> /opt/de_GWD/nftables/IP_V2NODE
+    done
+fi
+
+# Reload proxy service if requested
+if [[ "$1" == "r" ]]; then
+    if systemctl is-active degwd-client >/dev/null 2>&1; then
+        systemctl restart degwd-client >/dev/null 2>&1 || true
+    fi
+    if systemctl is-active vtrui >/dev/null 2>&1; then
+        systemctl restart vtrui >/dev/null 2>&1 || true
+    fi
+fi

@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# de_GWD NextGen - Client & Transparent Gateway Manager
+# ==============================================================================
+
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/ui.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/env.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/singbox.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/nftables.sh"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/node.sh"
+
+check_root
+ensure_dirs
+
+# Parse URI Link (vless:// or hysteria2://)
+parse_uri_and_configure() {
+    local uri="$1"
+
+    if [[ "$uri" =~ ^vless://([^@]+)@([^:]+):([0-9]+)\?(.*) ]]; then
+        local uuid="${BASH_REMATCH[1]}"
+        local host="${BASH_REMATCH[2]}"
+        local port="${BASH_REMATCH[3]}"
+        local query_part="${BASH_REMATCH[4]}"
+        local query="${query_part%%#*}"
+
+        local sni="" pbk="" sid="" flow="xtls-rprx-vision"
+        IFS='&' read -ra pairs <<< "$query"
+        for pair in "${pairs[@]}"; do
+            local key="${pair%%=*}"
+            local val="${pair#*=}"
+            case "$key" in
+                sni) sni="$val" ;;
+                pbk) pbk="$val" ;;
+                sid) sid="$val" ;;
+                flow) flow="$val" ;;
+            esac
+        done
+
+        msg_info "成功解析 VLESS-REALITY 节点: ${host}:${port} (SNI: ${sni:-$host})"
+        build_client_config "$host" "$port" "$uuid" "$pbk" "$sid" "${sni:-$host}" "8443" "" "vless"
+        return 0
+
+    elif [[ "$uri" =~ ^(hysteria2|hy2)://([^@]+)@([^:]+):([0-9]+) ]]; then
+        local pass="${BASH_REMATCH[2]}"
+        local host="${BASH_REMATCH[3]}"
+        local port="${BASH_REMATCH[4]}"
+
+        msg_info "成功解析 Hysteria 2 节点: ${host}:${port}"
+        build_client_config "$host" "443" "" "" "" "degwd.network" "$port" "$pass" "hy2"
+        return 0
+    else
+        msg_err "无法识别的节点链接格式！请确保以 vless:// 或 hysteria2:// 开头。"
+        return 1
+    fi
+}
+
+# Install / Setup Client Gateway
+install_client_flow() {
+    draw_section "一键部署 de_GWD NextGen 客户端 / 透明网关"
+    
+    install_prereqs
+    tune_kernel
+    install_singbox_core
+
+    printf "\n${C_B_WHITE}请选择节点配置方式：${C_RESET}\n"
+    printf "  1. 粘贴服务端节点链接 (推荐 · 支持 vless:// 或 hysteria2://)\n"
+    printf "  2. 手动输入服务器 IP 与端口密钥\n"
+    read -rp "请选择 [默认: 1]: " conf_type
+
+    if [[ "$conf_type" == "2" ]]; then
+        read -rp "  服务器公网 IP / 域名: " s_ip
+        read -rp "  选择协议 (1: VLESS-REALITY, 2: Hysteria 2) [默认: 1]: " s_proto_choice
+        if [[ "$s_proto_choice" == "2" ]]; then
+            read -rp "  Hysteria 2 UDP 端口 [默认: 8443]: " s_port
+            read -rp "  Hysteria 2 密码: " s_pass
+            build_client_config "$s_ip" "443" "" "" "" "degwd.network" "${s_port:-8443}" "$s_pass" "hy2"
+        else
+            read -rp "  VLESS 端口 [默认: 443]: " s_port
+            read -rp "  UUID: " s_uuid
+            read -rp "  伪装域名 SNI [默认: www.microsoft.com]: " s_sni
+            read -rp "  Public Key 公钥: " s_pbk
+            read -rp "  Short ID: " s_sid
+            build_client_config "$s_ip" "${s_port:-443}" "$s_uuid" "$s_pbk" "$s_sid" "${s_sni:-www.microsoft.com}" "8443" "" "vless"
+        fi
+    else
+        read -rp "  请粘贴节点链接: " input_link
+        if ! parse_uri_and_configure "$input_link"; then
+            read -rp "按回车键返回主菜单..." _
+            return 1
+        fi
+    fi
+
+    msg_step "配置透明网关并启动守护服务..."
+    setup_systemd_service "client"
+    setup_gateway_nat
+
+    msg_ok "客户端透明网关部署完成！"
+    printf "\n"
+    lan_guide
+    read -rp "按回车键返回主菜单..." _
+}
+
+# Change Credentials Flow
+change_client_credentials_flow() {
+    draw_section "更改账号密码与认证管理"
+    printf "  1. 更改 Web 控制面板登录密码\n"
+    printf "  2. 更改当前节点密码 / UUID\n"
+    read -rp "请选择 [1-2]: " c_choice
+    case "$c_choice" in
+        1)
+            change_web_password
+            ;;
+        2)
+            read -rp "请输入新节点链接 (vless:// 或 hysteria2://): " new_link
+            if parse_uri_and_configure "$new_link"; then
+                systemctl restart degwd-client >/dev/null 2>&1 || true
+                msg_ok "节点配置已更新！"
+            fi
+            ;;
+    esac
+    read -rp "按回车键返回主菜单..." _
+}
+
+# LAN Gateway Instructions
+lan_guide() {
+    draw_section "局域网旁路由 / 透明网关使用指南"
+    local iface
+    iface="$(get_default_iface)"
+    local lan_ip
+    lan_ip="$(ip -4 addr show "$iface" 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1)"
+
+    printf "  ${C_BOLD}%-22s${C_RESET} : ${C_B_CYAN}%s${C_RESET}\n" "透明网关本机内网 IP" "${lan_ip:-192.168.1.x}"
+    printf "  ${C_BOLD}%-22s${C_RESET} : ${C_B_GREEN}%s${C_RESET}\n" "本地 SOCKS5/HTTP 端口" "7890 (可在局域网任意设备填入使用)"
+    printf "  ${C_BOLD}%-22s${C_RESET} : %s\n" "透明代理网卡" "degwd-tun (全自动路由国内/海外流量)"
+    printf "\n"
+    printf "  ${C_B_WHITE}如何让局域网内其他电脑、手机、电视免安装翻墙：${C_RESET}\n"
+    printf "    1. 打开设备网络设置（Wi-Fi 或有线网），将 IP 改为静态 IP；\n"
+    printf "    2. 将设备的 ${C_B_YELLOW}默认网关 (Gateway)${C_RESET} 填入: ${C_B_CYAN}%s${C_RESET}\n" "${lan_ip:-此机器内网IP}"
+    printf "    3. 将设备的 ${C_B_YELLOW}DNS 服务器${C_RESET} 填入: ${C_B_CYAN}%s${C_RESET} (或 223.5.5.5)\n" "${lan_ip:-此机器内网IP}"
+    printf "    4. 保存后，该设备的所有海外流量将全自动走代理，国内流量极速直连！\n"
+}
+
+# Network RTT Benchmark
+test_network() {
+    draw_section "全网络链路连通性与 RTT 延迟体检"
+    msg_step "正在测试真实网络连通性与往返延迟..."
+
+    local test_targets=(
+        "国内百度直连|www.baidu.com:443"
+        "Cloudflare Anycast|1.1.1.1:443"
+        "Google 全球网关|www.google.com:443"
+        "YouTube 流媒体|www.youtube.com:443"
+    )
+
+    for item in "${test_targets[@]}"; do
+        local name="${item%%|*}"
+        local target="${item##*|}"
+        local host="${target%:*}"
+        local port="${target#*:}"
+
+        local start_ms end_ms rtt_ms
+        start_ms="$(date +%s%3N)"
+        if curl -fsS -m 3 --connect-timeout 2 "https://${host}" >/dev/null 2>&1 || \
+           nc -z -w 2 "$host" "$port" >/dev/null 2>&1; then
+            end_ms="$(date +%s%3N)"
+            rtt_ms=$((end_ms - start_ms))
+            printf "  %-24s : ${C_B_GREEN}● 连通正常${C_RESET} (${C_CYAN}%d ms${C_RESET})\n" "$name" "$rtt_ms"
+        else
+            printf "  %-24s : ${C_B_RED}○ 超时 / 阻断${C_RESET}\n" "$name"
+        fi
+    done
+
+    printf "\n"
+    read -rp "按回车键返回主菜单..." _
+}
+
+# Uninstall flow
+uninstall_client_flow() {
+    draw_section "彻底干净卸载 de_GWD 客户端"
+    read -rp "确定要彻底干净卸载客户端、防火墙规则、配置文件与残留吗？[y/N]: " confirm
+    if [[ "$confirm" =~ ^[yY]$ ]]; then
+        thorough_uninstall
+    else
+        msg_info "已取消卸载"
+    fi
+    sleep 2
+}
+
+# Client Main Menu
+main_menu() {
+    while true; do
+        draw_banner "客户端 / 透明网关 (Client)"
+
+        local c_status="not_installed"
+        if systemctl list-unit-files | grep -q "degwd-client.service"; then
+            if systemctl is-active degwd-client >/dev/null 2>&1; then
+                c_status="active"
+            else
+                c_status="inactive"
+            fi
+        fi
+
+        draw_status_row "透明网关服务状态" "$c_status" "TUN: degwd-tun | SOCKS5: 7890"
+        draw_status_row "BBR 拥塞控制" "$([[ "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)" == "bbr" ]] && echo "active" || echo "inactive")"
+        draw_line "─" 66
+
+        draw_menu_item "1" "一键安装 / 重新配置客户端网关" "(推荐)"
+        draw_menu_item "2" "导入新节点链接 (vless:// 或 hy2://)"
+        draw_menu_item "3" "启动透明网关守护进程"
+        draw_menu_item "4" "停止透明网关守护进程"
+        draw_menu_item "5" "重启网关"
+        draw_menu_item "6" "更改 Web 控制面板密码 / 节点凭据"
+        draw_menu_item "7" "全网络链路连通性与 RTT 延迟体检"
+        draw_menu_item "8" "查看局域网旁路由设置指南"
+        draw_menu_item "9" "彻底干净卸载客户端并还原环境"
+        draw_menu_item "0" "退出脚本"
+        draw_line "─" 66
+
+        read -rp "请输入选项数字 [0-9]: " choice
+        case "$choice" in
+            1) install_client_flow ;;
+            2)
+                read -rp "请粘贴新节点链接: " new_uri
+                if parse_uri_and_configure "$new_uri"; then
+                    systemctl restart degwd-client >/dev/null 2>&1 || true
+                    msg_ok "新节点已更新并重新加载网关！"
+                fi
+                read -rp "按回车键返回主菜单..." _
+                ;;
+            3)
+                systemctl start degwd-client
+                setup_gateway_nat
+                msg_ok "透明网关已启动"
+                sleep 1
+                ;;
+            4)
+                systemctl stop degwd-client
+                clean_gateway_nat
+                msg_warn "透明网关已停止"
+                sleep 1
+                ;;
+            5)
+                systemctl restart degwd-client
+                setup_gateway_nat
+                msg_ok "透明网关已重启"
+                sleep 1
+                ;;
+            6) change_client_credentials_flow ;;
+            7) test_network ;;
+            8) 
+                lan_guide
+                read -rp "按回车键返回主菜单..." _
+                ;;
+            9) uninstall_client_flow ;;
+            0)
+                printf "${C_GREEN}感谢使用 de_GWD NextGen，再见！${C_RESET}\n"
+                exit 0
+                ;;
+            *)
+                msg_warn "无效选项，请重新输入！"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+main_menu
