@@ -151,7 +151,7 @@ get_vless_xhttp_link() {
         "$SERVER_UUID" "$ip" "$xh_port" "$enkey" "$REALITY_SNI" "$REALITY_PUB_KEY" "$REALITY_SHORT_ID" "$SERVER_UUID" "$tag"
 }
 
-# Export VLESS-ws-enc Link
+# Export VLESS-ws Link
 get_vless_ws_link() {
     local ip="${1:-$(get_public_ip)}"
     [[ ! -f "$DEGWD_ENV_FILE" ]] && return 1
@@ -159,10 +159,9 @@ get_vless_ws_link() {
     source "$DEGWD_ENV_FILE"
 
     local ws_port="${WS_PORT:-20082}"
-    local enkey="${VLESS_ENKEY:-none}"
-    local tag="de_GWD-VLESS-ws-enc"
-    printf "vless://%s@%s:%s?encryption=%s&type=ws&security=none&path=%s-vw#%s\n" \
-        "$SERVER_UUID" "$ip" "$ws_port" "$enkey" "$SERVER_UUID" "$tag"
+    local tag="de_GWD-VLESS-ws"
+    printf "vless://%s@%s:%s?encryption=none&type=ws&security=none&path=%s-vw#%s\n" \
+        "$SERVER_UUID" "$ip" "$ws_port" "$SERVER_UUID" "$tag"
 }
 
 # Export Cloudflare Argo Tunnel Links (443 TLS & 80 Plain)
@@ -179,10 +178,8 @@ get_vless_argo_links() {
         return 1
     fi
 
-    local enkey="${VLESS_ENKEY:-none}"
-
-    local argo_tls_link="vless://${SERVER_UUID}@${argo_domain}:443?encryption=${enkey}&type=ws&host=${argo_domain}&path=${SERVER_UUID}-vw&security=tls&sni=${argo_domain}&fp=chrome&insecure=0&allowInsecure=0#de_GWD-Argo-TLS-443"
-    local argo_http_link="vless://${SERVER_UUID}@${argo_domain}:80?encryption=${enkey}&type=ws&host=${argo_domain}&path=${SERVER_UUID}-vw&security=none#de_GWD-Argo-HTTP-80"
+    local argo_tls_link="vless://${SERVER_UUID}@${argo_domain}:443?encryption=none&type=ws&host=${argo_domain}&path=${SERVER_UUID}-vw&security=tls&sni=${argo_domain}&fp=chrome&insecure=0&allowInsecure=0#de_GWD-Argo-TLS-443"
+    local argo_http_link="vless://${SERVER_UUID}@${argo_domain}:80?encryption=none&type=ws&host=${argo_domain}&path=${SERVER_UUID}-vw&security=none#de_GWD-Argo-HTTP-80"
 
     printf "%s\n%s\n" "$argo_tls_link" "$argo_http_link"
 }
