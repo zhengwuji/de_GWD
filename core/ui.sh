@@ -3,6 +3,12 @@
 # de_GWD NextGen - UI & Terminal Styling Library
 # ==============================================================================
 
+# Idempotency guard
+if [[ -n "${_DEGWD_UI_LOADED:-}" ]]; then
+    return 0 2>/dev/null || exit 0
+fi
+_DEGWD_UI_LOADED=1
+
 # ANSI Color & Style Palette
 readonly C_RESET="\033[0m"
 readonly C_BOLD="\033[1m"

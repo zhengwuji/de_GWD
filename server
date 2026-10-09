@@ -30,8 +30,13 @@ install_server_flow() {
 
     printf "\n${C_B_WHITE}配置服务端监听端口与参数：${C_RESET}\n"
 
-    read -rp "  请输入 VLESS-REALITY 端口 [默认: 443]: " input_vless_port
-    local vless_port="${input_vless_port:-443}"
+    local def_vport="443"
+    if is_port_in_use "443" "tcp"; then
+        msg_warn "检测到 TCP 443 端口已被占用 (如 OpenWrt Web 管理界面或现有反代服务)！"
+        def_vport="20443"
+    fi
+    read -rp "  请输入 VLESS-REALITY 端口 [默认: ${def_vport}]: " input_vless_port
+    local vless_port="${input_vless_port:-$def_vport}"
 
     read -rp "  请输入 VLESS-xhttp 端口   [默认: 20081]: " input_xh_port
     local xh_port="${input_xh_port:-20081}"
@@ -39,8 +44,13 @@ install_server_flow() {
     read -rp "  请输入 VLESS-WS 端口      [默认: 20082]: " input_vw_port
     local vw_port="${input_vw_port:-20082}"
 
-    read -rp "  请输入 Hysteria 2 端口    [默认: 8443]: " input_hy2_port
-    local hy2_port="${input_hy2_port:-8443}"
+    local def_hyport="8443"
+    if is_port_in_use "8443" "udp"; then
+        msg_warn "检测到 UDP 8443 端口已被占用！"
+        def_hyport="28443"
+    fi
+    read -rp "  请输入 Hysteria 2 端口    [默认: ${def_hyport}]: " input_hy2_port
+    local hy2_port="${input_hy2_port:-$def_hyport}"
 
     printf "\n  ${C_CYAN}推荐伪装域名列表：${C_RESET}\n"
     printf "    1. www.microsoft.com   (微软全球 CDN，高信任度)\n"
@@ -83,7 +93,7 @@ install_server_flow() {
     msg_step "生成 Sing-Box 与 Xray 服务端配置..."
     build_server_config "$vless_port" "$hy2_port" "$uuid" "$sni" "$hy2_pass" "$priv_key" "$pub_key" "$short_id"
     build_xray_server_config "$uuid" "$dekey" "$xh_port" "$vw_port" "$vless_port" "$sni" "$priv_key" "$short_id"
-    setup_systemd_service "server"
+    setup_daemon_service "server"
     setup_xray_server_service || true
 
     if [[ "$enable_argo" =~ ^[yY]$ ]]; then
@@ -128,14 +138,14 @@ change_credentials_flow() {
             read -rp "请输入新 UUID [留空自动生成: ${new_uuid}]: " in_uuid
             local final_uuid="${in_uuid:-$new_uuid}"
             build_server_config "$VLESS_PORT" "$HY2_PORT" "$final_uuid" "$REALITY_SNI" "$HY2_PASSWORD"
-            systemctl restart degwd-server
+            svc_restart degwd-server
             msg_ok "VLESS UUID 已更新成功！"
             ;;
         2)
             read -rp "请输入新 Hysteria 2 密码: " in_pass
             if [[ -n "$in_pass" ]]; then
                 build_server_config "$VLESS_PORT" "$HY2_PORT" "$SERVER_UUID" "$REALITY_SNI" "$in_pass"
-                systemctl restart degwd-server
+                svc_restart degwd-server
                 msg_ok "Hysteria 2 密码已更新成功！"
             fi
             ;;
@@ -143,7 +153,7 @@ change_credentials_flow() {
             read -rp "请输入新伪装域名 SNI: " in_sni
             if [[ -n "$in_sni" ]]; then
                 build_server_config "$VLESS_PORT" "$HY2_PORT" "$SERVER_UUID" "$in_sni" "$HY2_PASSWORD"
-                systemctl restart degwd-server
+                svc_restart degwd-server
                 msg_ok "伪装域名与密钥已重新生成生效！"
             fi
             ;;
@@ -154,7 +164,7 @@ change_credentials_flow() {
             read -rp "新 VLESS 端口 [默认: ${VLESS_PORT}]: " in_vp
             read -rp "新 Hy2 端口   [默认: ${HY2_PORT}]: " in_hp
             build_server_config "${in_vp:-$VLESS_PORT}" "${in_hp:-$HY2_PORT}" "$SERVER_UUID" "$REALITY_SNI" "$HY2_PASSWORD"
-            systemctl restart degwd-server
+            svc_restart degwd-server
             msg_ok "端口已更新生效！"
             ;;
     esac
@@ -207,8 +217,8 @@ main_menu() {
         draw_banner "服务端 (Server)"
 
         local s_status="not_installed"
-        if systemctl list-unit-files | grep -q "degwd-server.service"; then
-            if systemctl is-active degwd-server >/dev/null 2>&1; then
+        if svc_unit_exists "degwd-server"; then
+            if svc_is_active "degwd-server"; then
                 s_status="active"
             else
                 s_status="inactive"
@@ -247,17 +257,17 @@ main_menu() {
                 read -rp "按回车键返回主菜单..." _
                 ;;
             3)
-                systemctl start degwd-server
+                svc_start degwd-server
                 msg_ok "服务端已启动"
                 sleep 1
                 ;;
             4)
-                systemctl stop degwd-server
+                svc_stop degwd-server
                 msg_warn "服务端已停止"
                 sleep 1
                 ;;
             5)
-                systemctl restart degwd-server
+                svc_restart degwd-server
                 msg_ok "服务端已重启"
                 sleep 1
                 ;;

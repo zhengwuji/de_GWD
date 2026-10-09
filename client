@@ -48,7 +48,7 @@ parse_uri_and_configure() {
         # Connect Sing-box TUN to local Xray SOCKS5 detour
         build_client_config "$PARSED_HOST" "$PARSED_PORT" "$PARSED_UUID" "$PARSED_PBK" "$PARSED_SID" "$PARSED_SNI" "8443" "" "socks"
     else
-        systemctl stop degwd-xray-client >/dev/null 2>&1 || true
+        svc_stop degwd-xray-client
         if [[ "$PARSED_PROTO" == "hysteria2" ]]; then
             build_client_config "$PARSED_HOST" "443" "" "" "" "$PARSED_SNI" "$PARSED_PORT" "$PARSED_PASS" "hy2"
         else
@@ -123,7 +123,7 @@ install_client_flow() {
     fi
 
     msg_step "配置透明网关并启动守护服务..."
-    setup_systemd_service "client"
+    setup_daemon_service "client"
     setup_gateway_nat
 
     msg_ok "客户端透明网关部署完成！"
@@ -145,7 +145,7 @@ change_client_credentials_flow() {
         2)
             read -rp "请输入新节点链接 (vless:// 或 hysteria2://): " new_link
             if parse_uri_and_configure "$new_link"; then
-                systemctl restart degwd-client >/dev/null 2>&1 || true
+                svc_restart degwd-client
                 msg_ok "节点配置已更新！"
             fi
             ;;
@@ -224,8 +224,8 @@ main_menu() {
         draw_banner "客户端 / 透明网关 (Client)"
 
         local c_status="not_installed"
-        if systemctl list-unit-files | grep -q "degwd-client.service"; then
-            if systemctl is-active degwd-client >/dev/null 2>&1; then
+        if svc_unit_exists "degwd-client"; then
+            if svc_is_active "degwd-client"; then
                 c_status="active"
             else
                 c_status="inactive"
@@ -254,25 +254,25 @@ main_menu() {
             2)
                 read -rp "请粘贴新节点链接: " new_uri
                 if parse_uri_and_configure "$new_uri"; then
-                    systemctl restart degwd-client >/dev/null 2>&1 || true
+                    svc_restart degwd-client
                     msg_ok "新节点已更新并重新加载网关！"
                 fi
                 read -rp "按回车键返回主菜单..." _
                 ;;
             3)
-                systemctl start degwd-client
+                svc_start degwd-client
                 setup_gateway_nat
                 msg_ok "透明网关已启动"
                 sleep 1
                 ;;
             4)
-                systemctl stop degwd-client
+                svc_stop degwd-client
                 clean_gateway_nat
                 msg_warn "透明网关已停止"
                 sleep 1
                 ;;
             5)
-                systemctl restart degwd-client
+                svc_restart degwd-client
                 setup_gateway_nat
                 msg_ok "透明网关已重启"
                 sleep 1

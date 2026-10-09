@@ -41,46 +41,59 @@ detect_arch() {
     esac
 }
 
-# Detect Linux Distribution and Version
+# Detect Linux Distribution and Version (Debian/Ubuntu & OpenWrt adaptive)
 detect_os() {
-    if [[ ! -f /etc/os-release ]]; then
-        msg_err "未找到 /etc/os-release 文件，无法识别系统版本！"
-        exit 1
+    if [[ -f /etc/openwrt_release ]]; then
+        # shellcheck disable=SC1091
+        source /etc/openwrt_release
+        echo "openwrt:${DISTRIB_RELEASE:-unknown}"
+        return 0
     fi
 
-    # shellcheck disable=SC1091
-    source /etc/os-release
-    local distro="${ID:-unknown}"
-    local version="${VERSION_ID:-0}"
+    if [[ -f /etc/os-release ]]; then
+        # shellcheck disable=SC1091
+        source /etc/os-release
+        local distro="${ID:-unknown}"
+        local version="${VERSION_ID:-0}"
 
-    case "$distro" in
-        debian)
-            local ver_major
-            ver_major="${version%%.*}"
-            if [[ "$ver_major" -lt 11 ]]; then
-                msg_warn "检测到旧版 Debian ($version)，建议升级至 Debian 11/12/13 以获得最佳网络性能！"
-            fi
-            echo "debian:${version}"
-            ;;
-        ubuntu)
-            local ver_major
-            ver_major="${version%%.*}"
-            if [[ "$ver_major" -lt 20 ]]; then
-                msg_warn "检测到旧版 Ubuntu ($version)，建议升级至 Ubuntu 22.04/24.04 LTS！"
-            fi
-            echo "ubuntu:${version}"
-            ;;
-        *)
-            msg_warn "当前检测到系统: ${distro} (${version})。de_GWD 针对 Debian / Ubuntu 深度优化，其他类 Debian 发行版可尝试运行。"
-            echo "${distro}:${version}"
-            ;;
-    esac
+        if [[ "$distro" =~ ^(openwrt|kwrt|lede|immortalwrt)$ ]] || [[ "${ID_LIKE:-}" =~ (openwrt|lede) ]]; then
+            echo "openwrt:${version}"
+            return 0
+        fi
+
+        case "$distro" in
+            debian)
+                local ver_major
+                ver_major="${version%%.*}"
+                if [[ "$ver_major" -lt 11 ]]; then
+                    msg_warn "检测到旧版 Debian ($version)，建议升级至 Debian 11/12/13 以获得最佳网络性能！"
+                fi
+                echo "debian:${version}"
+                ;;
+            ubuntu)
+                local ver_major
+                ver_major="${version%%.*}"
+                if [[ "$ver_major" -lt 20 ]]; then
+                    msg_warn "检测到旧版 Ubuntu ($version)，建议升级至 Ubuntu 22.04/24.04 LTS！"
+                fi
+                echo "ubuntu:${version}"
+                ;;
+            *)
+                msg_warn "当前检测到系统: ${distro} (${version})。de_GWD 已适配 Debian / Ubuntu 及 OpenWrt。"
+                echo "${distro}:${version}"
+                ;;
+        esac
+    else
+        echo "linux:unknown"
+    fi
 }
 
 # Detect Virtualization Environment
 detect_virt() {
     if command -v systemd-detect-virt >/dev/null 2>&1; then
         systemd-detect-virt 2>/dev/null || echo "none"
+    elif [[ -f /etc/openwrt_release || -f /etc/rc.common ]]; then
+        echo "router/baremetal"
     else
         echo "unknown"
     fi
@@ -116,9 +129,33 @@ ensure_dirs() {
     chmod 700 "${DEGWD_LOG}" "${DEGWD_BACKUP}"
 }
 
-# Install System Prerequisites
+# Install System Prerequisites (adaptive for apt-get and opkg)
 install_prereqs() {
     msg_step "检查并安装基础运行时依赖..."
+
+    # OpenWrt (opkg)
+    if command -v opkg >/dev/null 2>&1; then
+        local pkgs=(curl wget jq openssl tar)
+        local to_install=()
+        for pkg in "${pkgs[@]}"; do
+            if ! command -v "$pkg" >/dev/null 2>&1; then
+                to_install+=("$pkg")
+            fi
+        done
+        if [[ ${#to_install[@]} -gt 0 ]]; then
+            msg_info "正在通过 opkg 安装缺失依赖: ${to_install[*]}"
+            opkg update >/dev/null 2>&1 || true
+            opkg install "${to_install[@]}" >/dev/null 2>&1 || true
+        fi
+        if [[ ! -c /dev/net/tun ]]; then
+            msg_info "检测到 tun 虚拟网卡支持未加载，尝试安装 kmod-tun..."
+            opkg install kmod-tun >/dev/null 2>&1 || true
+        fi
+        msg_ok "系统核心依赖就绪 (OpenWrt/opkg)"
+        return 0
+    fi
+
+    # Debian / Ubuntu (apt-get)
     export DEBIAN_FRONTEND=noninteractive
 
     local pkgs=(
@@ -180,7 +217,7 @@ fs.file-max = 1000000
 EOF
 
     # Apply sysctl parameters safely
-    sysctl --system >/dev/null 2>&1 || sysctl -p "$sysctl_file" >/dev/null 2>&1 || true
+    sysctl --system >/dev/null 2>&1 || sysctl -p "$sysctl_file" >/dev/null 2>&1 || sysctl -p /etc/sysctl.conf >/dev/null 2>&1 || true
 
     local new_cc
     new_cc="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown")"
@@ -191,10 +228,115 @@ EOF
     fi
 }
 
-# Check Service Status helper
+# Init System Detection & Universal Service Management (systemd & OpenWrt procd)
+is_systemd() {
+    command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system || -d /etc/systemd/system ]]
+}
+
+is_openwrt() {
+    [[ -f /etc/openwrt_release || -f /etc/rc.common ]] || grep -qiE 'openwrt|kwrt|lede|immortalwrt' /etc/os-release 2>/dev/null
+}
+
+svc_start() {
+    local svc="$1"
+    if is_systemd; then
+        systemctl start "$svc"
+    elif [[ -x "/etc/init.d/$svc" ]]; then
+        "/etc/init.d/$svc" start
+    else
+        return 1
+    fi
+}
+
+svc_stop() {
+    local svc="$1"
+    if is_systemd; then
+        systemctl stop "$svc" >/dev/null 2>&1 || true
+    elif [[ -x "/etc/init.d/$svc" ]]; then
+        "/etc/init.d/$svc" stop >/dev/null 2>&1 || true
+    fi
+}
+
+svc_restart() {
+    local svc="$1"
+    if is_systemd; then
+        systemctl restart "$svc"
+    elif [[ -x "/etc/init.d/$svc" ]]; then
+        "/etc/init.d/$svc" restart
+    else
+        return 1
+    fi
+}
+
+svc_enable() {
+    local svc="$1"
+    if is_systemd; then
+        systemctl enable "$svc" >/dev/null 2>&1 || true
+    elif [[ -x "/etc/init.d/$svc" ]]; then
+        "/etc/init.d/$svc" enable >/dev/null 2>&1 || true
+    fi
+}
+
+svc_disable() {
+    local svc="$1"
+    if is_systemd; then
+        systemctl disable "$svc" >/dev/null 2>&1 || true
+    elif [[ -x "/etc/init.d/$svc" ]]; then
+        "/etc/init.d/$svc" disable >/dev/null 2>&1 || true
+    fi
+}
+
+svc_is_active() {
+    local svc="$1"
+    if is_systemd; then
+        systemctl is-active "$svc" >/dev/null 2>&1
+    elif [[ -x "/etc/init.d/$svc" ]]; then
+        if "/etc/init.d/$svc" running >/dev/null 2>&1; then
+            return 0
+        fi
+        pgrep -f "sing-box.*${svc}" >/dev/null 2>&1 || \
+        pgrep -f "xray.*${svc}" >/dev/null 2>&1 || \
+        pgrep -f "/opt/de_GWD/.*${svc}" >/dev/null 2>&1
+    else
+        return 1
+    fi
+}
+
+svc_unit_exists() {
+    local svc="$1"
+    if is_systemd; then
+        systemctl list-unit-files 2>/dev/null | grep -q "${svc}\.service" || [[ -f "/etc/systemd/system/${svc}.service" ]]
+    elif [[ -f "/etc/init.d/${svc}" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 is_service_active() {
-    local name="$1"
-    systemctl is-active "$name" >/dev/null 2>&1
+    svc_is_active "$1"
+}
+
+is_port_in_use() {
+    local port="$1"
+    local proto="${2:-tcp}"
+    if command -v ss >/dev/null 2>&1; then
+        if [[ "$proto" == "udp" ]]; then
+            ss -uln 2>/dev/null | grep -qE ":${port}\s"
+        else
+            ss -tln 2>/dev/null | grep -qE ":${port}\s"
+        fi
+    elif command -v netstat >/dev/null 2>&1; then
+        if [[ "$proto" == "udp" ]]; then
+            netstat -uln 2>/dev/null | grep -qE ":${port}\s"
+        else
+            netstat -tln 2>/dev/null | grep -qE ":${port}\s"
+        fi
+    elif command -v lsof >/dev/null 2>&1; then
+        lsof -i ":$port" >/dev/null 2>&1
+    else
+        return 1
+    fi
 }
 # Change WebUI Admin Password (double SHA256 hashed matching auth.php)
 change_web_password() {
@@ -239,12 +381,15 @@ thorough_uninstall() {
     # 1. Stop and disable all related services
     local services=(degwd-server degwd-client degwd-xray-server degwd-xray-client degwd-argo coredns mosdns smartdns vtrui haproxy)
     for svc in "${services[@]}"; do
-        systemctl stop "$svc" >/dev/null 2>&1 || true
-        systemctl disable "$svc" >/dev/null 2>&1 || true
+        svc_stop "$svc"
+        svc_disable "$svc"
         rm -f "/etc/systemd/system/${svc}.service"
         rm -f "/lib/systemd/system/${svc}.service"
+        rm -f "/etc/init.d/${svc}"
     done
-    systemctl daemon-reload >/dev/null 2>&1 || true
+    if is_systemd; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
 
     # 2. Terminate background processes if any
     killall -9 sing-box xray cloudflared vtrui coredns smartdns mosdns 2>/dev/null || true
@@ -256,7 +401,7 @@ thorough_uninstall() {
     fi
     if command -v iptables >/dev/null 2>&1; then
         local def_iface
-        def_iface="$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1)"
+        def_iface="$(get_default_iface)"
         if [[ -n "$def_iface" ]]; then
             iptables -t nat -D POSTROUTING -o "$def_iface" -j MASQUERADE 2>/dev/null || true
         fi
@@ -269,9 +414,10 @@ thorough_uninstall() {
 
     # 5. Remove system symlinks
     rm -f /usr/local/bin/degwd /usr/local/bin/degwd-server /usr/local/bin/degwd-client /usr/local/bin/gwd
+    rm -f /usr/bin/degwd /usr/bin/degwd-server /usr/bin/degwd-client /usr/bin/gwd
 
     # 6. Reload sysctl
-    sysctl --system >/dev/null 2>&1 || true
+    sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.conf >/dev/null 2>&1 || true
 
     msg_ok "已彻底干净卸载 de_GWD，所有服务、端口、防火墙规则、配置文件与残留已被清除！"
 }

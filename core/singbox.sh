@@ -18,6 +18,17 @@ install_singbox_core() {
         fi
     fi
 
+    # Check if system already has sing-box binary installed (e.g. OpenWrt /usr/bin/sing-box)
+    if command -v sing-box >/dev/null 2>&1; then
+        local sys_singbox
+        sys_singbox="$(command -v sing-box)"
+        if "$sys_singbox" version >/dev/null 2>&1; then
+            msg_ok "检测到系统已内置 Sing-Box 核心 (${sys_singbox})，直接复用"
+            ln -sf "$sys_singbox" "$SINGBOX_BIN"
+            return 0
+        fi
+    fi
+
     msg_step "获取 Sing-Box 最新稳定发行版..."
     local arch
     arch="$(detect_arch)"
@@ -68,7 +79,7 @@ install_singbox_core() {
     local found_bin
     found_bin="$(find "$tmp_dir" -type f -name "sing-box" | head -n1)"
     if [[ -n "$found_bin" && -f "$found_bin" ]]; then
-        install -m 755 "$found_bin" "$SINGBOX_BIN"
+        cp -f "$found_bin" "$SINGBOX_BIN" && chmod 755 "$SINGBOX_BIN"
         rm -rf "$tmp_dir"
         local installed_ver
         installed_ver="$("$SINGBOX_BIN" version 2>/dev/null | head -n1 | awk '{print $3}')"
@@ -438,13 +449,14 @@ EOF
 }
 
 # Install or Update Systemd Service Unit
-setup_systemd_service() {
+setup_daemon_service() {
     local role="$1" # "server" or "client"
     local service_name="degwd-${role}"
     local conf_path="${DEGWD_ETC}/${role}.json"
-    local unit_file="/etc/systemd/system/${service_name}.service"
 
-    cat << EOF > "$unit_file"
+    if is_systemd; then
+        local unit_file="/etc/systemd/system/${service_name}.service"
+        cat << EOF > "$unit_file"
 [Unit]
 Description=de_GWD NextGen ${role^} Service (Sing-Box Core)
 Documentation=https://github.com/jacyl4/de_GWD
@@ -466,15 +478,42 @@ CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
 WantedBy=multi-user.target
 EOF
 
-    systemctl daemon-reload
-    systemctl enable "${service_name}" >/dev/null 2>&1
-    systemctl restart "${service_name}"
+        systemctl daemon-reload
+        systemctl enable "${service_name}" >/dev/null 2>&1
+        systemctl restart "${service_name}"
+    elif is_openwrt; then
+        local init_file="/etc/init.d/${service_name}"
+        cat << EOF > "$init_file"
+#!/bin/sh /etc/rc.common
+START=95
+STOP=10
+USE_PROCD=1
+
+start_service() {
+    procd_open_instance
+    procd_set_param command ${SINGBOX_BIN} run -c ${conf_path}
+    procd_set_param respawn
+    procd_set_param limits nofile="65535 65535"
+    procd_close_instance
+}
+EOF
+        chmod +x "$init_file"
+        "$init_file" enable >/dev/null 2>&1
+        "$init_file" restart
+    else
+        killall -9 sing-box 2>/dev/null || true
+        nohup "${SINGBOX_BIN}" run -c "${conf_path}" >/dev/null 2>&1 &
+    fi
     
     sleep 1
-    if systemctl is-active "${service_name}" >/dev/null 2>&1; then
-        msg_ok "Systemd 守护服务 [${service_name}] 启动成功且状态正常"
+    if svc_is_active "${service_name}"; then
+        msg_ok "守护服务 [${service_name}] 启动成功且状态正常"
     else
-        msg_err "Systemd 守护服务 [${service_name}] 启动失败，请检查日志: journalctl -u ${service_name} -n 20"
+        msg_err "守护服务 [${service_name}] 启动失败，请检查配置或日志"
         return 1
     fi
+}
+
+setup_systemd_service() {
+    setup_daemon_service "$@"
 }

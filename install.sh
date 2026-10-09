@@ -88,11 +88,14 @@ fi
 chmod +x "${DEGWD_INSTALL_DIR}/server" "${DEGWD_INSTALL_DIR}/client"
 chmod +x "${DEGWD_INSTALL_DIR}"/core/*.sh 2>/dev/null || true
 
-# Setup system command symlink
-ln -sf "${DEGWD_INSTALL_DIR}/server" /usr/local/bin/degwd-server
-ln -sf "${DEGWD_INSTALL_DIR}/client" /usr/local/bin/degwd-client
-ln -sf "${DEGWD_INSTALL_DIR}/server" /usr/local/bin/degwd
-ln -sf "${DEGWD_INSTALL_DIR}/server" /usr/local/bin/gwd
+# Setup system command symlinks (both /usr/local/bin and /usr/bin for OpenWrt PATH compatibility)
+mkdir -p /usr/local/bin /usr/bin
+for bin_dir in /usr/local/bin /usr/bin; do
+    ln -sf "${DEGWD_INSTALL_DIR}/server" "${bin_dir}/degwd-server"
+    ln -sf "${DEGWD_INSTALL_DIR}/client" "${bin_dir}/degwd-client"
+    ln -sf "${DEGWD_INSTALL_DIR}/server" "${bin_dir}/degwd"
+    ln -sf "${DEGWD_INSTALL_DIR}/server" "${bin_dir}/gwd"
+done
 
 echo -e "\033[1;32m[ OK ]\033[0m de_GWD NextGen 组件已就绪！"
 echo -e "快捷管理命令: \033[1;33mdegwd\033[0m (服务端) 或 \033[1;33mdegwd-client\033[0m (客户端/网关)"

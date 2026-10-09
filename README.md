@@ -1,10 +1,10 @@
 # de_GWD NextGen (v2.0)
 
 > 现代高性能透明网络网关与防审查协议路由套件  
-> 专为新版 **Debian 11 / 12 / 13** 与 **Ubuntu 20.04 / 22.04 / 24.04 LTS** 深度优化
+> 专为新版 **Debian 11 / 12 / 13**、**Ubuntu 20.04 / 22.04 / 24.04 LTS** 与 **OpenWrt / Kwrt / LEDE** 深度优化
 
 [![License](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE.md)
-[![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu-orange.svg)](#系统兼容性)
+[![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20OpenWrt-orange.svg)](#系统兼容性)
 [![Architecture](https://img.shields.io/badge/arch-amd64%20%7C%20arm64-green.svg)](#系统兼容性)
 [![Protocols](https://img.shields.io/badge/protocols-VLESS--REALITY%20%7C%20xhttp%20%7C%20Hysteria%202%20%7C%20Argo%20Tunnel-red.svg)](#一新一代协议矩阵)
 
@@ -270,6 +270,7 @@ vlpt="" xhpt="" vwpt="" hypt="" alns="y" argo="vwpt" bash <(wget -qO- https://ra
 | **Ubuntu 24.04 LTS (Noble)** | 🟢 完美支持 | amd64 / arm64 | 完美适配 deb822 格式源、新版 AppArmor 与高并发网络栈 |
 | **Ubuntu 22.04 LTS (Jammy)** | 🟢 完美支持 | amd64 / arm64 | 稳定兼容 |
 | **Ubuntu 20.04 LTS (Focal)** | 🟢 完美支持 | amd64 / arm64 | 稳定兼容 |
+| **OpenWrt / Kwrt / LEDE (21.x~24.x)** | 🟢 完美支持 | amd64 / arm64 | 原生 procd 进程托管自适应、智能复用内置 Sing-Box/Xray 核心、opkg 依赖自动补齐、Web 管理端口防冲突检测 |
 
 ### 安全与隐私设计
 - **严格权限隔离**：所有生成的私钥、自签证书与配置文件默认赋予 `chmod 600`，杜绝多用户提权风险。

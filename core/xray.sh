@@ -22,6 +22,17 @@ install_xray_core() {
         fi
     fi
 
+    # Check if system already has xray binary installed (e.g. OpenWrt /usr/bin/xray)
+    if command -v xray >/dev/null 2>&1; then
+        local sys_xray
+        sys_xray="$(command -v xray)"
+        if "$sys_xray" version >/dev/null 2>&1; then
+            msg_ok "检测到系统已内置 Xray 核心 (${sys_xray})，直接复用"
+            ln -sf "$sys_xray" "$XRAY_BIN"
+            return 0
+        fi
+    fi
+
     msg_step "获取 Xray 核心 (支持 xhttp 与 Post-Quantum ENC)..."
     local arch
     arch="$(detect_arch)"
@@ -53,7 +64,7 @@ install_xray_core() {
                 if command -v unzip >/dev/null 2>&1 || apt-get install -y -qq unzip >/dev/null 2>&1; then
                     unzip -q -o "${tmp_dir}/xray.zip" -d "${tmp_dir}/out" 2>/dev/null
                     if [[ -f "${tmp_dir}/out/xray" ]]; then
-                        install -m 755 "${tmp_dir}/out/xray" "$XRAY_BIN"
+                        cp -f "${tmp_dir}/out/xray" "$XRAY_BIN" && chmod 755 "$XRAY_BIN"
                         success=true
                         break
                     fi
@@ -63,7 +74,7 @@ install_xray_core() {
             if curl -fsSL --max-time 45 "$url" -o "${tmp_dir}/xray" 2>/dev/null; then
                 chmod +x "${tmp_dir}/xray"
                 if "${tmp_dir}/xray" version >/dev/null 2>&1; then
-                    install -m 755 "${tmp_dir}/xray" "$XRAY_BIN"
+                    cp -f "${tmp_dir}/xray" "$XRAY_BIN" && chmod 755 "$XRAY_BIN"
                     success=true
                     break
                 fi
@@ -114,7 +125,7 @@ install_cloudflared() {
         if curl -fsSL --max-time 45 "$url" -o "$tmp_bin" 2>/dev/null; then
             chmod +x "$tmp_bin"
             if "$tmp_bin" --version >/dev/null 2>&1; then
-                install -m 755 "$tmp_bin" "$CLOUDFLARED_BIN"
+                cp -f "$tmp_bin" "$CLOUDFLARED_BIN" && chmod 755 "$CLOUDFLARED_BIN"
                 success=true
                 break
             fi
@@ -313,8 +324,9 @@ start_argo_tunnel() {
 
 # Setup Xray Server Systemd Unit
 setup_xray_server_service() {
-    local unit_file="/etc/systemd/system/degwd-xray-server.service"
-    cat << EOF > "$unit_file"
+    if is_systemd; then
+        local unit_file="/etc/systemd/system/degwd-xray-server.service"
+        cat << EOF > "$unit_file"
 [Unit]
 Description=de_GWD NextGen Xray Multi-Protocol Service
 Documentation=https://github.com/jacyl4/de_GWD
@@ -333,9 +345,32 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 EOF
 
-    systemctl daemon-reload
-    systemctl enable degwd-xray-server >/dev/null 2>&1
-    systemctl restart degwd-xray-server
+        systemctl daemon-reload
+        systemctl enable degwd-xray-server >/dev/null 2>&1
+        systemctl restart degwd-xray-server
+    elif is_openwrt; then
+        local init_file="/etc/init.d/degwd-xray-server"
+        cat << EOF > "$init_file"
+#!/bin/sh /etc/rc.common
+START=95
+STOP=10
+USE_PROCD=1
+
+start_service() {
+    procd_open_instance
+    procd_set_param command ${XRAY_BIN} run -c ${XRAY_SERVER_CONF}
+    procd_set_param respawn
+    procd_set_param limits nofile="65535 65535"
+    procd_close_instance
+}
+EOF
+        chmod +x "$init_file"
+        "$init_file" enable >/dev/null 2>&1
+        "$init_file" restart
+    else
+        killall -9 xray 2>/dev/null || true
+        nohup "${XRAY_BIN}" run -c "${XRAY_SERVER_CONF}" >/dev/null 2>&1 &
+    fi
 }
 
 # Build Client-Side Xray Outbound Configuration (SOCKS5 127.0.0.1:10808)
@@ -484,8 +519,9 @@ EOF
 
 # Setup Xray Client Systemd Unit
 setup_xray_client_service() {
-    local unit_file="/etc/systemd/system/degwd-xray-client.service"
-    cat << EOF > "$unit_file"
+    if is_systemd; then
+        local unit_file="/etc/systemd/system/degwd-xray-client.service"
+        cat << EOF > "$unit_file"
 [Unit]
 Description=de_GWD NextGen Xray Client Outbound Proxy Helper
 Documentation=https://github.com/jacyl4/de_GWD
@@ -504,7 +540,30 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 EOF
 
-    systemctl daemon-reload
-    systemctl enable degwd-xray-client >/dev/null 2>&1
-    systemctl restart degwd-xray-client
+        systemctl daemon-reload
+        systemctl enable degwd-xray-client >/dev/null 2>&1
+        systemctl restart degwd-xray-client
+    elif is_openwrt; then
+        local init_file="/etc/init.d/degwd-xray-client"
+        cat << EOF > "$init_file"
+#!/bin/sh /etc/rc.common
+START=95
+STOP=10
+USE_PROCD=1
+
+start_service() {
+    procd_open_instance
+    procd_set_param command ${XRAY_BIN} run -c ${XRAY_CLIENT_CONF}
+    procd_set_param respawn
+    procd_set_param limits nofile="65535 65535"
+    procd_close_instance
+}
+EOF
+        chmod +x "$init_file"
+        "$init_file" enable >/dev/null 2>&1
+        "$init_file" restart
+    else
+        killall -9 xray 2>/dev/null || true
+        nohup "${XRAY_BIN}" run -c "${XRAY_CLIENT_CONF}" >/dev/null 2>&1 &
+    fi
 }
