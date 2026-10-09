@@ -186,7 +186,7 @@
           </div>
         </div>
 
-        <!-- Modal 协议高级参数编辑 (VLESS-REALITY / Hy2 / VMess) -->
+        <!-- Modal 协议高级参数编辑 (VLESS-REALITY / xhttp / WS / Argo / Hy2 / VMess) -->
         <div id="advSettingsModal" class="modal fade" tabindex="-1" role="dialog" aria-hidden="true">
           <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -197,37 +197,74 @@
               <div class="modal-body">
                 <input type="hidden" id="advRowIndex" value="">
                 
-                <div class="form-group">
-                  <label class="small font-weight-bold">协议类型</label>
-                  <select id="advProto" class="form-control form-control-sm" onchange="advProtoChanged()">
-                    <option value="vless">VLESS-REALITY (推荐 · 抗封锁免证书)</option>
-                    <option value="hysteria2">Hysteria 2 (推荐 · 极速抗丢包)</option>
-                    <option value="vmess">VMess (经典兼容)</option>
-                    <option value="trojan">Trojan (TLS 伪装)</option>
+                <div class="row">
+                  <div class="col-6 form-group">
+                    <label class="small font-weight-bold">协议类型</label>
+                    <select id="advProto" class="form-control form-control-sm" onchange="advProtoChanged()">
+                      <option value="vless">VLESS</option>
+                      <option value="hysteria2">Hysteria 2</option>
+                      <option value="vmess">VMess</option>
+                      <option value="trojan">Trojan</option>
+                    </select>
+                  </div>
+                  <div class="col-6 form-group">
+                    <label class="small font-weight-bold">传输网络 (Network)</label>
+                    <select id="advNetwork" class="form-control form-control-sm" onchange="advProtoChanged()">
+                      <option value="tcp">TCP</option>
+                      <option value="ws">WebSocket (ws)</option>
+                      <option value="xhttp">xhttp (SplitHTTP 极速抗封)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-group mb-2">
+                  <label class="small font-weight-bold">安全协议 (Security)</label>
+                  <select id="advSecurity" class="form-control form-control-sm" onchange="advProtoChanged()">
+                    <option value="reality">REALITY (无证书伪装)</option>
+                    <option value="tls">TLS 标准加密</option>
+                    <option value="none">none (明文 / Argo 80 端口)</option>
                   </select>
                 </div>
 
-                <!-- REALITY Options -->
+                <div class="form-group mb-2">
+                  <label class="small font-weight-bold text-success">伪装域名 (SNI / ServerName)</label>
+                  <input type="text" id="advSni" class="form-control form-control-sm" placeholder="例如: apple.com 或 www.microsoft.com">
+                </div>
+
+                <div class="form-group mb-2" id="advHostGroup">
+                  <label class="small font-weight-bold text-info">伪装 Host / Argo 域名</label>
+                  <input type="text" id="advHost" class="form-control form-control-sm" placeholder="例如: *.trycloudflare.com 或 CDN 域名">
+                </div>
+
+                <div class="form-group mb-2" id="advPathGroup">
+                  <label class="small font-weight-bold">路径 (Path)</label>
+                  <input type="text" id="advPath" class="form-control form-control-sm" placeholder="例如: /uuid-vw 或 uuid-xh">
+                </div>
+
+                <!-- REALITY Specific -->
                 <div id="advRealityGroup">
                   <div class="form-group mb-2">
-                    <label class="small font-weight-bold text-success">伪装域名 (SNI / ServerName)</label>
-                    <input type="text" id="advSni" class="form-control form-control-sm" placeholder="例如: www.microsoft.com 或 gateway.icloud.com">
-                  </div>
-                  <div class="form-group mb-2">
-                    <label class="small font-weight-bold text-success">公钥 (Public Key / pbk)</label>
-                    <input type="text" id="advPbk" class="form-control form-control-sm" placeholder="REALITY x25519 公钥">
+                    <label class="small font-weight-bold text-success">REALITY 公钥 (pbk)</label>
+                    <input type="text" id="advPbk" class="form-control form-control-sm" placeholder="x25519 public key">
                   </div>
                   <div class="form-group mb-2">
                     <label class="small font-weight-bold text-success">Short ID (sid)</label>
                     <input type="text" id="advSid" class="form-control form-control-sm" placeholder="8字节十六进制 short_id">
                   </div>
-                  <div class="form-group mb-2">
-                    <label class="small font-weight-bold text-success">流控 (Flow)</label>
-                    <select id="advFlow" class="form-control form-control-sm">
-                      <option value="xtls-rprx-vision">xtls-rprx-vision (极速内核 Splice)</option>
-                      <option value="">none (无流控)</option>
-                    </select>
-                  </div>
+                </div>
+
+                <!-- ENC Specific -->
+                <div class="form-group mb-2" id="advEncGroup">
+                  <label class="small font-weight-bold text-danger">抗量子 ENC 加密串 (vlessenc)</label>
+                  <input type="text" id="advEncryption" class="form-control form-control-sm" placeholder="留空或 none 为关闭; mlkem768x25519plus 为开启">
+                </div>
+
+                <div class="form-group mb-2">
+                  <label class="small font-weight-bold">流控 (Flow)</label>
+                  <select id="advFlow" class="form-control form-control-sm">
+                    <option value="xtls-rprx-vision">xtls-rprx-vision</option>
+                    <option value="">none (无流控)</option>
+                  </select>
                 </div>
 
                 <!-- Hysteria 2 Options -->
@@ -296,6 +333,10 @@ $nodes = isset($de_GWDconf->v2node) ? $de_GWDconf->v2node : [];
 for( $i=0; $i<count($nodes); $i++){
   $num = $i+1;
   $proto = isset($nodes[$i]->proto) ? $nodes[$i]->proto : (isset($nodes[$i]->pbk) ? 'vless' : 'vmess');
+  $network = isset($nodes[$i]->network) ? $nodes[$i]->network : (isset($nodes[$i]->net) ? $nodes[$i]->net : 'tcp');
+  $security = isset($nodes[$i]->security) ? $nodes[$i]->security : (isset($nodes[$i]->pbk) ? 'reality' : 'none');
+  $encryption = isset($nodes[$i]->encryption) ? $nodes[$i]->encryption : 'none';
+  $host = isset($nodes[$i]->host) ? $nodes[$i]->host : '';
   $domain = isset($nodes[$i]->domain) ? $nodes[$i]->domain : '';
   $tls = isset($nodes[$i]->tls) ? $nodes[$i]->tls : '';
   $name = isset($nodes[$i]->name) ? $nodes[$i]->name : '';
@@ -309,15 +350,26 @@ for( $i=0; $i<count($nodes); $i++){
   $insecure = isset($nodes[$i]->insecure) ? $nodes[$i]->insecure : '1';
 
   $protoBadge = '<span class="badge badge-secondary">VMess</span>';
-  if ($proto === 'vless') {
-      $protoBadge = '<span class="badge badge-success">VLESS-REALITY</span>';
-  } elseif ($proto === 'hysteria2') {
+  if ($proto === 'hysteria2') {
       $protoBadge = '<span class="badge badge-primary">Hysteria 2</span>';
+  } elseif ($network === 'xhttp') {
+      $protoBadge = '<span class="badge badge-danger">VLESS-xhttp</span>';
+  } elseif (strpos($host, 'trycloudflare.com') !== false || stripos($name, 'argo') !== false) {
+      $protoBadge = '<span class="badge badge-warning">VLESS-Argo</span>';
+  } elseif ($network === 'ws') {
+      $protoBadge = '<span class="badge badge-info">VLESS-WS</span>';
+  } elseif ($proto === 'vless') {
+      $protoBadge = '<span class="badge badge-success">VLESS-REALITY</span>';
   } elseif ($proto === 'trojan') {
       $protoBadge = '<span class="badge badge-info">Trojan</span>';
   }
 ?>
 <tr data-proto="<?php echo htmlspecialchars($proto); ?>"
+    data-network="<?php echo htmlspecialchars($network); ?>"
+    data-security="<?php echo htmlspecialchars($security); ?>"
+    data-encryption="<?php echo htmlspecialchars($encryption); ?>"
+    data-host="<?php echo htmlspecialchars($host); ?>"
+    data-path="<?php echo htmlspecialchars($path); ?>"
     data-sni="<?php echo htmlspecialchars($sni); ?>"
     data-pbk="<?php echo htmlspecialchars($pbk); ?>"
     data-sid="<?php echo htmlspecialchars($sid); ?>"
@@ -412,17 +464,27 @@ var currentAdvTr = null;
 function openAdvModal(btn) {
   currentAdvTr = $(btn).closest('tr');
   var proto = currentAdvTr.attr('data-proto') || 'vless';
+  var network = currentAdvTr.attr('data-network') || 'tcp';
+  var security = currentAdvTr.attr('data-security') || (proto==='vless'?'reality':'none');
   var sni = currentAdvTr.attr('data-sni') || 'www.microsoft.com';
+  var host = currentAdvTr.attr('data-host') || '';
+  var path = currentAdvTr.attr('data-path') || currentAdvTr.find('td').eq(5).find('input').val() || '';
   var pbk = currentAdvTr.attr('data-pbk') || '';
   var sid = currentAdvTr.attr('data-sid') || '';
+  var encryption = currentAdvTr.attr('data-encryption') || 'none';
   var flow = currentAdvTr.attr('data-flow') || 'xtls-rprx-vision';
   var hy2pass = currentAdvTr.attr('data-hy2pass') || currentAdvTr.find('td').eq(4).find('input').val();
   var insecure = currentAdvTr.attr('data-insecure') !== '0';
 
   $('#advProto').val(proto);
+  $('#advNetwork').val(network);
+  $('#advSecurity').val(security);
   $('#advSni').val(sni);
+  $('#advHost').val(host);
+  $('#advPath').val(path);
   $('#advPbk').val(pbk);
   $('#advSid').val(sid);
+  $('#advEncryption').val(encryption);
   $('#advFlow').val(flow);
   $('#advHy2Pass').val(hy2pass);
   $('#advInsecure').prop('checked', insecure);
@@ -433,49 +495,74 @@ function openAdvModal(btn) {
 
 function advProtoChanged() {
   var proto = $('#advProto').val();
-  if (proto === 'vless') {
-    $('#advRealityGroup').show();
-    $('#advHy2Group').hide();
-  } else if (proto === 'hysteria2') {
+  var sec = $('#advSecurity').val();
+  var net = $('#advNetwork').val();
+
+  if (proto === 'hysteria2') {
     $('#advRealityGroup').hide();
     $('#advHy2Group').show();
+    $('#advEncGroup').hide();
+  } else if (proto === 'vless') {
+    $('#advHy2Group').hide();
+    if (sec === 'reality') {
+      $('#advRealityGroup').show();
+    } else {
+      $('#advRealityGroup').hide();
+    }
+    $('#advEncGroup').show();
   } else {
     $('#advRealityGroup').hide();
     $('#advHy2Group').hide();
+    $('#advEncGroup').hide();
   }
 }
 
 $('#buttonSaveAdv').click(function(){
   if (!currentAdvTr) return;
   var proto = $('#advProto').val();
+  var network = $('#advNetwork').val();
+  var security = $('#advSecurity').val();
   var sni = $('#advSni').val();
+  var host = $('#advHost').val();
+  var path = $('#advPath').val();
   var pbk = $('#advPbk').val();
   var sid = $('#advSid').val();
+  var encryption = $('#advEncryption').val();
   var flow = $('#advFlow').val();
   var hy2pass = $('#advHy2Pass').val();
   var insecure = $('#advInsecure').is(':checked') ? '1' : '0';
 
   currentAdvTr.attr('data-proto', proto);
+  currentAdvTr.attr('data-network', network);
+  currentAdvTr.attr('data-security', security);
   currentAdvTr.attr('data-sni', sni);
+  currentAdvTr.attr('data-host', host);
+  currentAdvTr.attr('data-path', path);
   currentAdvTr.attr('data-pbk', pbk);
   currentAdvTr.attr('data-sid', sid);
+  currentAdvTr.attr('data-encryption', encryption);
   currentAdvTr.attr('data-flow', flow);
   currentAdvTr.attr('data-hy2pass', hy2pass);
   currentAdvTr.attr('data-insecure', insecure);
 
   // Update badge
-  var badge = '<span class="badge badge-secondary">VMess</span>';
-  if (proto === 'vless') {
-    badge = '<span class="badge badge-success">VLESS-REALITY</span>';
-  } else if (proto === 'hysteria2') {
+  var badge = '<span class="badge badge-success">VLESS-REALITY</span>';
+  if (proto === 'hysteria2') {
     badge = '<span class="badge badge-primary">Hysteria 2</span>';
-  } else if (proto === 'trojan') {
-    badge = '<span class="badge badge-info">Trojan</span>';
+  } else if (network === 'xhttp') {
+    badge = '<span class="badge badge-danger">VLESS-xhttp</span>';
+  } else if (host.indexOf('trycloudflare.com') !== -1 || (currentAdvTr.find('td').eq(3).find('input').val().toLowerCase().indexOf('argo') !== -1)) {
+    badge = '<span class="badge badge-warning">VLESS-Argo</span>';
+  } else if (network === 'ws') {
+    badge = '<span class="badge badge-info">VLESS-WS</span>';
+  } else if (proto === 'vmess') {
+    badge = '<span class="badge badge-secondary">VMess</span>';
   }
   currentAdvTr.find('td').eq(1).html(badge);
 
-  // If path column is empty and we have sni, suggest it
-  if (sni && !currentAdvTr.find('td').eq(5).find('input').val()) {
+  if (path) {
+    currentAdvTr.find('td').eq(5).find('input').val(path);
+  } else if (sni) {
     currentAdvTr.find('td').eq(5).find('input').val(sni);
   }
 
@@ -540,6 +627,12 @@ $('#buttonDoImport').click(function(){
         appendParsedNode(parsed);
         importedCount++;
       } catch(e) { console.error("解析 Hy2 失败:", e); }
+    } else if (line.startsWith('vmess://')) {
+      try {
+        var parsed = parseVmess(line);
+        appendParsedNode(parsed);
+        importedCount++;
+      } catch(e) { console.error("解析 VMess 失败:", e); }
     } else {
       alert("不支持的链接格式: " + line.substring(0, 30));
     }
@@ -565,19 +658,33 @@ function parseVless(uri) {
   var domain = url.hostname + ":" + (url.port || 443);
   var params = url.searchParams;
 
+  var network = params.get('type') || params.get('network') || 'tcp';
+  var security = params.get('security') || (params.get('pbk') ? 'reality' : 'none');
+  var encryption = params.get('encryption') || 'none';
+  var host = params.get('host') || '';
+  var sni = params.get('sni') || host || url.hostname;
+  var path = params.get('path') || '';
+  var pbk = params.get('pbk') || params.get('public_key') || '';
+  var sid = params.get('sid') || params.get('short_id') || '';
+  var flow = params.get('flow') || (security === 'reality' ? 'xtls-rprx-vision' : '');
+
   return {
     proto: 'vless',
     domain: domain,
     name: tag,
     uuid: uuid,
-    path: params.get('path') || '',
-    tls: params.get('sni') || url.hostname,
-    sni: params.get('sni') || url.hostname,
-    pbk: params.get('pbk') || '',
-    sid: params.get('sid') || '',
-    flow: params.get('flow') || 'xtls-rprx-vision',
+    path: path,
+    tls: sni,
+    sni: sni,
+    network: network,
+    security: security,
+    encryption: encryption,
+    host: host,
+    pbk: pbk,
+    sid: sid,
+    flow: flow,
     hy2pass: '',
-    insecure: '0'
+    insecure: (params.get('insecure') === '1' || params.get('allowInsecure') === '1') ? '1' : '0'
   };
 }
 
@@ -601,6 +708,10 @@ function parseHy2(uri) {
     path: '',
     tls: params.get('sni') || url.hostname,
     sni: params.get('sni') || url.hostname,
+    network: 'udp',
+    security: 'tls',
+    encryption: 'none',
+    host: '',
     pbk: '',
     sid: '',
     flow: '',
@@ -609,13 +720,52 @@ function parseHy2(uri) {
   };
 }
 
+function parseVmess(uri) {
+  var b64 = uri.substring(8);
+  var json = JSON.parse(atob(b64));
+  var isTls = (json.tls === 'tls');
+  return {
+    proto: 'vmess',
+    domain: json.add + ":" + json.port,
+    name: json.ps || 'VMess-节点',
+    uuid: json.id,
+    path: json.path || '',
+    tls: json.host || json.sni || json.add,
+    sni: json.host || json.sni || json.add,
+    network: json.net || 'ws',
+    security: isTls ? 'tls' : 'none',
+    encryption: 'none',
+    host: json.host || '',
+    pbk: '',
+    sid: '',
+    flow: '',
+    hy2pass: '',
+    insecure: '0'
+  };
+}
+
 function appendParsedNode(n) {
   var i = $("#nodeTable tr").length + 1;
   var badge = '<span class="badge badge-success">VLESS-REALITY</span>';
-  if (n.proto === 'hysteria2') badge = '<span class="badge badge-primary">Hysteria 2</span>';
+  if (n.proto === 'hysteria2') {
+    badge = '<span class="badge badge-primary">Hysteria 2</span>';
+  } else if (n.network === 'xhttp') {
+    badge = '<span class="badge badge-danger">VLESS-xhttp</span>';
+  } else if (n.host && (n.host.indexOf('trycloudflare.com') !== -1 || n.name.toLowerCase().indexOf('argo') !== -1)) {
+    badge = '<span class="badge badge-warning">VLESS-Argo</span>';
+  } else if (n.network === 'ws') {
+    badge = '<span class="badge badge-info">VLESS-WS</span>';
+  } else if (n.proto === 'vmess') {
+    badge = '<span class="badge badge-secondary">VMess</span>';
+  }
 
   $('#nodeTable').append(`
     <tr data-proto="${n.proto}"
+        data-network="${n.network}"
+        data-security="${n.security}"
+        data-encryption="${n.encryption}"
+        data-host="${n.host}"
+        data-path="${n.path}"
         data-sni="${n.sni}"
         data-pbk="${n.pbk}"
         data-sid="${n.sid}"

@@ -236,7 +236,7 @@ thorough_uninstall() {
     msg_step "正在执行彻底干净卸载..."
 
     # 1. Stop and disable all related services
-    local services=(degwd-server degwd-client coredns mosdns smartdns vtrui haproxy)
+    local services=(degwd-server degwd-client degwd-xray-server degwd-xray-client degwd-argo coredns mosdns smartdns vtrui haproxy)
     for svc in "${services[@]}"; do
         systemctl stop "$svc" >/dev/null 2>&1 || true
         systemctl disable "$svc" >/dev/null 2>&1 || true
@@ -246,7 +246,7 @@ thorough_uninstall() {
     systemctl daemon-reload >/dev/null 2>&1 || true
 
     # 2. Terminate background processes if any
-    killall -9 sing-box xray vtrui coredns smartdns mosdns 2>/dev/null || true
+    killall -9 sing-box xray cloudflared vtrui coredns smartdns mosdns 2>/dev/null || true
 
     # 3. Clean firewall, NAT and routing tables
     if command -v nft >/dev/null 2>&1; then

@@ -51,6 +51,7 @@ else
     dl "core/ui.sh"
     dl "core/singbox.sh"
     dl "core/node.sh"
+    dl "core/xray.sh"
     dl "core/nftables.sh"
 fi
 

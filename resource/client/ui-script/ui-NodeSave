@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# de_GWD NextGen - Node Collector & Compiler (ui-NodeSave)
+# de_GWD NextGen - Modern Node Collector & Multi-Core Compiler (ui-NodeSave)
 # ==============================================================================
 
 readonly BASE="/opt/de_GWD"
 readonly CONF="${BASE}/0conf"
 readonly CLIENT_JSON="${BASE}/etc/client.json"
+readonly XRAY_CLIENT_JSON="${BASE}/etc/xray_client.json"
 readonly SINGBOX_BIN="${BASE}/bin/sing-box"
+readonly XRAY_BIN="${BASE}/bin/xray"
 
 if [[ ! -f "$CONF" ]]; then
     exit 0
 fi
 
-# Ensure directories
 mkdir -p "${BASE}/etc" "${BASE}/log"
 
-# Compile modern sing-box client configuration from 0conf
-compile_singbox_from_0conf() {
+# Compile modern sing-box client & Xray outbound helper
+compile_config_from_0conf() {
     local node_count
     node_count="$(jq '.v2node | length' "$CONF" 2>/dev/null || echo "0")"
     if [[ "$node_count" -eq 0 ]]; then
@@ -29,11 +30,10 @@ compile_singbox_from_0conf() {
         active_idx=0
     fi
 
-    # Read selected active node parameters
     local node_json
     node_json="$(jq ".v2node[${active_idx}]" "$CONF" 2>/dev/null)"
     
-    local domain proto name uuid path tls sni pbk sid flow hy2_pass insecure
+    local domain proto name uuid path tls sni pbk sid flow hy2_pass insecure network security encryption host_hdr pin_sha
     domain="$(jq -r '.domain // ""' <<< "$node_json")"
     proto="$(jq -r '.proto // ""' <<< "$node_json")"
     name="$(jq -r '.name // "节点"' <<< "$node_json")"
@@ -46,10 +46,15 @@ compile_singbox_from_0conf() {
     flow="$(jq -r '.flow // "xtls-rprx-vision"' <<< "$node_json")"
     hy2_pass="$(jq -r '.hy2_pass // ""' <<< "$node_json")"
     insecure="$(jq -r '.insecure // "1"' <<< "$node_json")"
+    network="$(jq -r '.network // .net // "tcp"' <<< "$node_json")"
+    security="$(jq -r '.security // ""' <<< "$node_json")"
+    encryption="$(jq -r '.encryption // "none"' <<< "$node_json")"
+    host_hdr="$(jq -r '.host // ""' <<< "$node_json")"
+    pin_sha="$(jq -r '.pinSHA256 // ""' <<< "$node_json")"
 
     # Auto detect protocol if unspecified
     if [[ -z "$proto" ]]; then
-        if [[ -n "$pbk" ]]; then
+        if [[ -n "$pbk" || "$network" == "xhttp" ]]; then
             proto="vless"
         elif [[ -n "$hy2_pass" && "$path" == "" ]]; then
             proto="hysteria2"
@@ -67,11 +72,148 @@ compile_singbox_from_0conf() {
         sni="${tls:-$server_host}"
     fi
 
+    local need_xray_helper=false
+    # xhttp or post-quantum encryption (vlessenc) requires Xray-core
+    if [[ "$network" == "xhttp" || ("$encryption" != "none" && "$encryption" != "") ]]; then
+        need_xray_helper=true
+    fi
+
     local proxy_outbound=""
-    if [[ "$proto" == "hysteria2" ]]; then
-        local is_insecure="true"
-        [[ "$insecure" == "0" ]] && is_insecure="false"
+    if [[ "$need_xray_helper" == "true" ]]; then
+        # 1. Generate Xray client outbound helper (SOCKS5 127.0.0.1:10808)
+        local stream_sec="none"
+        local sec_block=""
+        if [[ -n "$pbk" ]]; then
+            stream_sec="reality"
+            sec_block=$(cat << EOF
+        "realitySettings": {
+          "show": false,
+          "fingerprint": "chrome",
+          "serverName": "${sni}",
+          "publicKey": "${pbk}",
+          "shortId": "${sid}"
+        },
+EOF
+)
+        elif [[ "$security" == "tls" || "$server_port" == "443" ]]; then
+            stream_sec="tls"
+            sec_block=$(cat << EOF
+        "tlsSettings": {
+          "serverName": "${sni}",
+          "fingerprint": "chrome"
+        },
+EOF
+)
+        fi
+
+        local net_block=""
+        if [[ "$network" == "xhttp" ]]; then
+            net_block=$(cat << EOF
+        "xhttpSettings": {
+          "host": "${host_hdr}",
+          "path": "${path}",
+          "mode": "auto"
+        }
+EOF
+)
+        else
+            net_block=$(cat << EOF
+        "wsSettings": {
+          "path": "${path}",
+          "headers": {
+            "Host": "${host_hdr:-$sni}"
+          }
+        }
+EOF
+)
+        fi
+
+        cat << EOF > "$XRAY_CLIENT_JSON"
+{
+  "log": { "loglevel": "warning" },
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "port": 10808,
+      "listen": "127.0.0.1",
+      "protocol": "socks",
+      "settings": { "auth": "noauth", "udp": true }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "${server_host}",
+            "port": ${server_port},
+            "users": [
+              {
+                "id": "${uuid}",
+                "flow": "${flow}",
+                "encryption": "${encryption}"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "${network}",
+        "security": "${stream_sec}",
+        ${sec_block}
+        ${net_block}
+      }
+    }
+  ]
+}
+EOF
+        chmod 600 "$XRAY_CLIENT_JSON"
+
+        # Ensure systemd service exists and restart
+        if [[ -x "$XRAY_BIN" ]]; then
+            cat << 'EOF' > /etc/systemd/system/degwd-xray-client.service
+[Unit]
+Description=de_GWD NextGen Xray Client Helper
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/de_GWD
+ExecStart=/opt/de_GWD/bin/xray run -c /opt/de_GWD/etc/xray_client.json
+Restart=always
+RestartSec=2s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            systemctl daemon-reload >/dev/null 2>&1
+            systemctl enable degwd-xray-client >/dev/null 2>&1
+            systemctl restart degwd-xray-client >/dev/null 2>&1
+        fi
+
+        # Point Sing-Box TUN transparent proxy to local Xray SOCKS5 detour
         proxy_outbound=$(cat << EOF
+    {
+      "type": "socks",
+      "tag": "proxy",
+      "server": "127.0.0.1",
+      "server_port": 10808
+    }
+EOF
+)
+
+    else
+        # Stop Xray helper when standard protocol is active
+        systemctl stop degwd-xray-client >/dev/null 2>&1 || true
+
+        if [[ "$proto" == "hysteria2" ]]; then
+            local is_insecure="true"
+            [[ "$insecure" == "0" ]] && is_insecure="false"
+            proxy_outbound=$(cat << EOF
     {
       "type": "hysteria2",
       "tag": "proxy",
@@ -86,8 +228,9 @@ compile_singbox_from_0conf() {
     }
 EOF
 )
-    elif [[ "$proto" == "vless" ]]; then
-        proxy_outbound=$(cat << EOF
+        elif [[ "$proto" == "vless" ]]; then
+            if [[ -n "$pbk" ]]; then
+                proxy_outbound=$(cat << EOF
     {
       "type": "vless",
       "tag": "proxy",
@@ -112,9 +255,30 @@ EOF
     }
 EOF
 )
-    else
-        # VMess / Trojan fallback
-        proxy_outbound=$(cat << EOF
+            else
+                proxy_outbound=$(cat << EOF
+    {
+      "type": "vless",
+      "tag": "proxy",
+      "server": "${server_host}",
+      "server_port": ${server_port},
+      "uuid": "${uuid}",
+      "transport": {
+        "type": "ws",
+        "path": "${path}"
+      },
+      "tls": {
+        "enabled": $([[ "$security" == "tls" || "$server_port" == "443" ]] && echo "true" || echo "false"),
+        "server_name": "${sni}"
+      },
+      "packet_encoding": "xudp"
+    }
+EOF
+)
+            fi
+        else
+            # VMess / Trojan fallback
+            proxy_outbound=$(cat << EOF
     {
       "type": "vmess",
       "tag": "proxy",
@@ -127,15 +291,16 @@ EOF
         "path": "${path}"
       },
       "tls": {
-        "enabled": true,
+        "enabled": $([[ "$security" == "tls" || "$server_port" == "443" ]] && echo "true" || echo "false"),
         "server_name": "${sni}"
       }
     }
 EOF
 )
+        fi
     fi
 
-    # Output client.json
+    # Output sing-box client.json (TUN Transparent Gateway + Smart DNS)
     cat << EOF > "$CLIENT_JSON"
 {
   "log": {
@@ -243,9 +408,9 @@ EOF
 }
 
 # Compile configuration
-compile_singbox_from_0conf
+compile_config_from_0conf
 
-# Also maintain nftables set if nftables exists
+# Also maintain nftables IP sets
 if command -v nft >/dev/null 2>&1; then
     mkdir -p "${BASE}/nftables"
     >/opt/de_GWD/nftables/IP_V2NODE
@@ -258,8 +423,5 @@ fi
 if [[ "$1" == "r" ]]; then
     if systemctl is-active degwd-client >/dev/null 2>&1; then
         systemctl restart degwd-client >/dev/null 2>&1 || true
-    fi
-    if systemctl is-active vtrui >/dev/null 2>&1; then
-        systemctl restart vtrui >/dev/null 2>&1 || true
     fi
 fi

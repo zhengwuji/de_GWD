@@ -241,7 +241,18 @@ build_client_config() {
     local proto="${9:-vless}" # "vless" or "hy2"
 
     local proxy_outbound
-    if [[ "$proto" == "hy2" && -n "$hy2_pass" ]]; then
+    if [[ "$proto" == "socks" ]]; then
+        # Detour through local Xray-core helper (127.0.0.1:10808) for xhttp and post-quantum ENC
+        proxy_outbound=$(cat << EOF
+    {
+      "type": "socks",
+      "tag": "proxy",
+      "server": "127.0.0.1",
+      "server_port": 10808
+    }
+EOF
+)
+    elif [[ "$proto" == "hy2" || "$proto" == "hysteria2" ]]; then
         proxy_outbound=$(cat << EOF
     {
       "type": "hysteria2",
@@ -251,8 +262,26 @@ build_client_config() {
       "password": "${hy2_pass}",
       "tls": {
         "enabled": true,
+        "server_name": "${sni}",
         "insecure": true
       }
+    }
+EOF
+)
+    elif [[ -z "$pub_key" ]]; then
+        # Standard VLESS WebSocket / TLS outbound
+        proxy_outbound=$(cat << EOF
+    {
+      "type": "vless",
+      "tag": "proxy",
+      "server": "${server_ip}",
+      "server_port": ${vless_port},
+      "uuid": "${uuid}",
+      "transport": {
+        "type": "ws",
+        "path": "${uuid}-vw"
+      },
+      "packet_encoding": "xudp"
     }
 EOF
 )

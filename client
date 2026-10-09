@@ -15,51 +15,75 @@ source "${SCRIPT_DIR}/core/singbox.sh"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/core/nftables.sh"
 # shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/xray.sh"
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/core/node.sh"
 
 check_root
 ensure_dirs
 
-# Parse URI Link (vless:// or hysteria2://)
+# Parse URI Link (supports vless, hysteria2, vmess, ss, argo, xhttp, ws)
 parse_uri_and_configure() {
     local uri="$1"
 
-    if [[ "$uri" =~ ^vless://([^@]+)@([^:]+):([0-9]+)\?(.*) ]]; then
-        local uuid="${BASH_REMATCH[1]}"
-        local host="${BASH_REMATCH[2]}"
-        local port="${BASH_REMATCH[3]}"
-        local query_part="${BASH_REMATCH[4]}"
-        local query="${query_part%%#*}"
-
-        local sni="" pbk="" sid="" flow="xtls-rprx-vision"
-        IFS='&' read -ra pairs <<< "$query"
-        for pair in "${pairs[@]}"; do
-            local key="${pair%%=*}"
-            local val="${pair#*=}"
-            case "$key" in
-                sni) sni="$val" ;;
-                pbk) pbk="$val" ;;
-                sid) sid="$val" ;;
-                flow) flow="$val" ;;
-            esac
-        done
-
-        msg_info "成功解析 VLESS-REALITY 节点: ${host}:${port} (SNI: ${sni:-$host})"
-        build_client_config "$host" "$port" "$uuid" "$pbk" "$sid" "${sni:-$host}" "8443" "" "vless"
-        return 0
-
-    elif [[ "$uri" =~ ^(hysteria2|hy2)://([^@]+)@([^:]+):([0-9]+) ]]; then
-        local pass="${BASH_REMATCH[2]}"
-        local host="${BASH_REMATCH[3]}"
-        local port="${BASH_REMATCH[4]}"
-
-        msg_info "成功解析 Hysteria 2 节点: ${host}:${port}"
-        build_client_config "$host" "443" "" "" "" "degwd.network" "$port" "$pass" "hy2"
-        return 0
-    else
-        msg_err "无法识别的节点链接格式！请确保以 vless:// 或 hysteria2:// 开头。"
+    if ! parse_node_uri "$uri"; then
+        msg_err "无法识别的节点链接格式！支持 vless://, hysteria2://, hy2://, vmess:// 等。"
         return 1
     fi
+
+    msg_ok "成功解析节点: ${PARSED_TAG} (${PARSED_HOST}:${PARSED_PORT}) [协议: ${PARSED_PROTO}, 传输: ${PARSED_NETWORK}]"
+
+    local need_xray=false
+    if [[ "$PARSED_NETWORK" == "xhttp" || ("$PARSED_ENCRYPTION" != "none" && -n "$PARSED_ENCRYPTION") ]]; then
+        need_xray=true
+    fi
+
+    if [[ "$need_xray" == "true" ]]; then
+        msg_step "检测到 xhttp / 抗量子 ENC 加密节点，联动启用 Xray 极速出站引擎..."
+        install_xray_core || return 1
+        build_xray_client_config "$PARSED_HOST" "$PARSED_PORT" "$PARSED_UUID" "$PARSED_PROTO" \
+            "$PARSED_NETWORK" "$PARSED_SECURITY" "$PARSED_PATH" "$PARSED_HOST_HEADER" "$PARSED_SNI" \
+            "$PARSED_PBK" "$PARSED_SID" "$PARSED_FLOW" "$PARSED_ENCRYPTION"
+        setup_xray_client_service
+        # Connect Sing-box TUN to local Xray SOCKS5 detour
+        build_client_config "$PARSED_HOST" "$PARSED_PORT" "$PARSED_UUID" "$PARSED_PBK" "$PARSED_SID" "$PARSED_SNI" "8443" "" "socks"
+    else
+        systemctl stop degwd-xray-client >/dev/null 2>&1 || true
+        if [[ "$PARSED_PROTO" == "hysteria2" ]]; then
+            build_client_config "$PARSED_HOST" "443" "" "" "" "$PARSED_SNI" "$PARSED_PORT" "$PARSED_PASS" "hy2"
+        else
+            build_client_config "$PARSED_HOST" "$PARSED_PORT" "$PARSED_UUID" "$PARSED_PBK" "$PARSED_SID" "$PARSED_SNI" "8443" "" "vless"
+        fi
+    fi
+
+    # Persist to 0conf
+    local conf_file="/opt/de_GWD/0conf"
+    if [[ -f "$conf_file" ]]; then
+        local node_obj
+        node_obj=$(jq -n \
+            --arg name "$PARSED_TAG" \
+            --arg domain "${PARSED_HOST}:${PARSED_PORT}" \
+            --arg uuid "$PARSED_UUID" \
+            --arg proto "$PARSED_PROTO" \
+            --arg net "$PARSED_NETWORK" \
+            --arg sec "$PARSED_SECURITY" \
+            --arg enc "$PARSED_ENCRYPTION" \
+            --arg host "$PARSED_HOST_HEADER" \
+            --arg path "$PARSED_PATH" \
+            --arg sni "$PARSED_SNI" \
+            --arg pbk "$PARSED_PBK" \
+            --arg sid "$PARSED_SID" \
+            --arg flow "$PARSED_FLOW" \
+            --arg hy2pass "$PARSED_PASS" \
+            --arg ins "$PARSED_INSECURE" \
+            '{name:$name, domain:$domain, uuid:$uuid, proto:$proto, network:$net, security:$sec, encryption:$enc, host:$host, path:$path, sni:$sni, pbk:$pbk, sid:$sid, flow:$flow, hy2_pass:$hy2pass, insecure:$ins}')
+
+        local tmp_c
+        tmp_c="$(mktemp)"
+        jq --argjson node "$node_obj" '.v2node = [$node] | .update.v2node.index = 0' "$conf_file" > "$tmp_c" && mv -f "$tmp_c" "$conf_file"
+        chmod 666 "$conf_file"
+    fi
+    return 0
 }
 
 # Install / Setup Client Gateway

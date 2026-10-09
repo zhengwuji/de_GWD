@@ -13,6 +13,8 @@ source "${SCRIPT_DIR}/core/env.sh"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/core/singbox.sh"
 # shellcheck disable=SC1091
+source "${SCRIPT_DIR}/core/xray.sh"
+# shellcheck disable=SC1091
 source "${SCRIPT_DIR}/core/node.sh"
 
 check_root
@@ -31,7 +33,13 @@ install_server_flow() {
     read -rp "  请输入 VLESS-REALITY 端口 [默认: 443]: " input_vless_port
     local vless_port="${input_vless_port:-443}"
 
-    read -rp "  请输入 Hysteria 2 端口 [默认: 8443]: " input_hy2_port
+    read -rp "  请输入 VLESS-xhttp 端口   [默认: 20081]: " input_xh_port
+    local xh_port="${input_xh_port:-20081}"
+
+    read -rp "  请输入 VLESS-WS 端口      [默认: 20082]: " input_vw_port
+    local vw_port="${input_vw_port:-20082}"
+
+    read -rp "  请输入 Hysteria 2 端口    [默认: 8443]: " input_hy2_port
     local hy2_port="${input_hy2_port:-8443}"
 
     printf "\n  ${C_CYAN}推荐伪装域名列表：${C_RESET}\n"
@@ -55,9 +63,40 @@ install_server_flow() {
     local hy2_pass
     hy2_pass="$(openssl rand -base64 12 | tr -d '=/+')"
 
-    msg_step "生成节点配置文件并配置 Systemd 守护服务..."
+    read -rp "  是否开启 Cloudflare Argo 穿透隧道 (生成免备案/免证书节点)？[Y/n]: " enable_argo
+    enable_argo="${enable_argo:-Y}"
+
+    msg_step "正在安装/配置 Xray 核心与抗量子 ENC 密钥..."
+    install_xray_core || true
+    local enc_pair
+    enc_pair="$(gen_vlessenc_keypair 2>/dev/null || echo "none|none")"
+    local dekey="${enc_pair%%|*}"
+    local enkey="${enc_pair##*|}"
+
+    local keypair
+    keypair="$(gen_reality_keypair)"
+    local priv_key="${keypair%%:*}"
+    local pub_key="${keypair##*:}"
+    local short_id
+    short_id="$(gen_short_id)"
+
+    msg_step "生成 Sing-Box 与 Xray 服务端配置..."
     build_server_config "$vless_port" "$hy2_port" "$uuid" "$sni" "$hy2_pass"
+    build_xray_server_config "$uuid" "$dekey" "$xh_port" "$vw_port" "$vless_port" "$sni" "$priv_key" "$short_id"
     setup_systemd_service "server"
+    setup_xray_server_service || true
+
+    if [[ "$enable_argo" =~ ^[yY]$ ]]; then
+        start_argo_tunnel "$vw_port" || true
+    fi
+
+    # Update metadata file with all parameters
+    cat << EOF >> "$DEGWD_ENV_FILE"
+XHTTP_PORT="${xh_port}"
+WS_PORT="${vw_port}"
+VLESS_DEKEY="${dekey}"
+VLESS_ENKEY="${enkey}"
+EOF
 
     print_node_info
     printf "\n"
