@@ -29,24 +29,24 @@
 
 ```mermaid
 flowchart LR
-    subgraph LAN [局域网环境 (家庭 / 办公网络)]
-        DeviceA[📱 手机 / 平板]
-        DeviceB[📺 智能电视 / Apple TV]
-        DeviceC[💻 电脑 PC / Mac]
+    subgraph LAN["局域网环境 (家庭 / 办公网络)"]
+        DeviceA["📱 手机 / 平板"]
+        DeviceB["📺 智能电视 / Apple TV"]
+        DeviceC["💻 电脑 PC / Mac"]
         Client["🖥️ de_GWD 客户端 (软路由/小主机)<br>内网 IP: 192.168.1.200<br>网卡: degwd-tun (TUN 全局接管)<br>分流核心: Sing-Box + Xray 辅助"]
-        DeviceA -->|默认网关指向 192.168.1.200| Client
-        DeviceB -->|默认网关指向 192.168.1.200| Client
-        DeviceC -->|默认网关指向 192.168.1.200| Client
+        DeviceA -->|"默认网关指向 192.168.1.200"| Client
+        DeviceB -->|"默认网关指向 192.168.1.200"| Client
+        DeviceC -->|"默认网关指向 192.168.1.200"| Client
     end
 
-    subgraph SplitRouting [智能分流机制]
-        Client -->|国内流量 (geosite:cn / geoip:cn)| CN[🇨🇳 国内网站与直连 CDN (全速不耗流量)]
-        Client -->|海外流量 (黑名单 / 默认分流)| Server["🌐 de_GWD 服务端 (境外 VPS)<br>监听: 443 / 20081 / 20082 / 8443<br>隧道: Cloudflare Argo Tunnel"]
+    subgraph SplitRouting["智能分流机制"]
+        Client -->|"国内流量 (geosite:cn / geoip:cn)"| CN["🇨🇳 国内网站与直连 CDN (全速不耗流量)"]
+        Client -->|"海外流量 (黑名单 / 默认分流)"| Server["🌐 de_GWD 服务端 (境外 VPS)<br>监听: 443 / 20081 / 20082 / 8443<br>隧道: Cloudflare Argo Tunnel"]
     end
 
-    subgraph Internet [自由互联网络]
-        Server --> Google[Google / YouTube / 4K 流媒体]
-        Server --> GitHub[GitHub / OpenAI / Netflix]
+    subgraph Internet["自由互联网络"]
+        Server --> Google["Google / YouTube / 4K 流媒体"]
+        Server --> GitHub["GitHub / OpenAI / Netflix"]
     end
 ```
 
