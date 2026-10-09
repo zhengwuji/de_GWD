@@ -194,8 +194,7 @@ build_server_config() {
   "outbounds": [
     {
       "type": "direct",
-      "tag": "direct",
-      "domain_strategy": "prefer_ipv4"
+      "tag": "direct"
     },
     {
       "type": "block",
