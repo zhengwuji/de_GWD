@@ -179,7 +179,7 @@ build_xray_server_config() {
             "id": "${uuid}"
           }
         ],
-        "decryption": "${dekey}"
+        "decryption": "none"
       },
       "streamSettings": {
         "network": "xhttp",

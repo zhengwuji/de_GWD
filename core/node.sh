@@ -147,8 +147,8 @@ get_vless_xhttp_link() {
     local xh_port="${XHTTP_PORT:-20081}"
     local enkey="${VLESS_ENKEY:-none}"
     local tag="de_GWD-VLESS-xhttp-enc"
-    printf "vless://%s@%s:%s?encryption=%s&security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&type=xhttp&path=%s-xh&mode=auto#%s\n" \
-        "$SERVER_UUID" "$ip" "$xh_port" "$enkey" "$REALITY_SNI" "$REALITY_PUB_KEY" "$REALITY_SHORT_ID" "$SERVER_UUID" "$tag"
+    printf "vless://%s@%s:%s?encryption=none&security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&type=xhttp&path=%s-xh&mode=auto#%s\n" \
+        "$SERVER_UUID" "$ip" "$xh_port" "$REALITY_SNI" "$REALITY_PUB_KEY" "$REALITY_SHORT_ID" "$SERVER_UUID" "$tag"
 }
 
 # Export VLESS-ws Link
