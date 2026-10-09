@@ -147,7 +147,7 @@ get_vless_xhttp_link() {
     local xh_port="${XHTTP_PORT:-20081}"
     local enkey="${VLESS_ENKEY:-none}"
     local tag="de_GWD-VLESS-xhttp-enc"
-    printf "vless://%s@%s:%s?encryption=none&security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&type=xhttp&path=%s-xh&mode=auto#%s\n" \
+    printf "vless://%s@%s:%s?encryption=none&security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&type=xhttp&path=/%s-xh&mode=auto#%s\n" \
         "$SERVER_UUID" "$ip" "$xh_port" "$REALITY_SNI" "$REALITY_PUB_KEY" "$REALITY_SHORT_ID" "$SERVER_UUID" "$tag"
 }
 
@@ -160,7 +160,7 @@ get_vless_ws_link() {
 
     local ws_port="${WS_PORT:-20082}"
     local tag="de_GWD-VLESS-ws"
-    printf "vless://%s@%s:%s?encryption=none&type=ws&security=none&path=%s-vw#%s\n" \
+    printf "vless://%s@%s:%s?encryption=none&type=ws&security=none&path=/%s-vw#%s\n" \
         "$SERVER_UUID" "$ip" "$ws_port" "$SERVER_UUID" "$tag"
 }
 
@@ -178,8 +178,8 @@ get_vless_argo_links() {
         return 1
     fi
 
-    local argo_tls_link="vless://${SERVER_UUID}@${argo_domain}:443?encryption=none&type=ws&host=${argo_domain}&path=${SERVER_UUID}-vw&security=tls&sni=${argo_domain}&fp=chrome&insecure=0&allowInsecure=0#de_GWD-Argo-TLS-443"
-    local argo_http_link="vless://${SERVER_UUID}@${argo_domain}:80?encryption=none&type=ws&host=${argo_domain}&path=${SERVER_UUID}-vw&security=none#de_GWD-Argo-HTTP-80"
+    local argo_tls_link="vless://${SERVER_UUID}@${argo_domain}:443?encryption=none&type=ws&host=${argo_domain}&path=/${SERVER_UUID}-vw&security=tls&sni=${argo_domain}&fp=chrome&insecure=0&allowInsecure=0#de_GWD-Argo-TLS-443"
+    local argo_http_link="vless://${SERVER_UUID}@${argo_domain}:80?encryption=none&type=ws&host=${argo_domain}&path=/${SERVER_UUID}-vw&security=none#de_GWD-Argo-HTTP-80"
 
     printf "%s\n%s\n" "$argo_tls_link" "$argo_http_link"
 }

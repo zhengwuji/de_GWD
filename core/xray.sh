@@ -186,7 +186,7 @@ build_xray_server_config() {
         "security": "reality",
         "realitySettings": {
           "fingerprint": "chrome",
-          "target": "${sni}:443",
+          "dest": "${sni}:443",
           "serverNames": [
             "${sni}"
           ],
@@ -197,7 +197,7 @@ build_xray_server_config() {
         },
         "xhttpSettings": {
           "host": "",
-          "path": "${uuid}-xh",
+          "path": "/${uuid}-xh",
           "mode": "auto"
         }
       },
@@ -223,7 +223,7 @@ build_xray_server_config() {
       "streamSettings": {
         "network": "ws",
         "wsSettings": {
-          "path": "${uuid}-vw"
+          "path": "/${uuid}-vw"
         }
       },
       "sniffing": {
