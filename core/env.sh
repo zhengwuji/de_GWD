@@ -6,6 +6,7 @@
 # Global Project Constants
 readonly DEGWD_VERSION="2.0.0"
 readonly DEGWD_BASE="${DEGWD_BASE:-/opt/de_GWD}"
+readonly DEGWD_CORE="${DEGWD_BASE}/core"
 readonly DEGWD_BIN="${DEGWD_BASE}/bin"
 readonly DEGWD_ETC="${DEGWD_BASE}/etc"
 readonly DEGWD_LOG="${DEGWD_BASE}/log"
@@ -274,3 +275,9 @@ thorough_uninstall() {
 
     msg_ok "已彻底干净卸载 de_GWD，所有服务、端口、防火墙规则、配置文件与残留已被清除！"
 }
+
+# Auto load UI library if available
+if [[ -f "${DEGWD_CORE}/ui.sh" ]]; then
+    # shellcheck disable=SC1090
+    source "${DEGWD_CORE}/ui.sh"
+fi
