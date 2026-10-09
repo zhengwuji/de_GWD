@@ -81,7 +81,7 @@ install_server_flow() {
     short_id="$(gen_short_id)"
 
     msg_step "生成 Sing-Box 与 Xray 服务端配置..."
-    build_server_config "$vless_port" "$hy2_port" "$uuid" "$sni" "$hy2_pass"
+    build_server_config "$vless_port" "$hy2_port" "$uuid" "$sni" "$hy2_pass" "$priv_key" "$pub_key" "$short_id"
     build_xray_server_config "$uuid" "$dekey" "$xh_port" "$vw_port" "$vless_port" "$sni" "$priv_key" "$short_id"
     setup_systemd_service "server"
     setup_xray_server_service || true

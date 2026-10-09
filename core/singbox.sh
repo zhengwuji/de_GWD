@@ -137,13 +137,19 @@ build_server_config() {
     local uuid="${3:-$(gen_uuid)}"
     local sni="${4:-$DEFAULT_REALITY_SNI}"
     local hy2_pass="${5:-$(openssl rand -base64 12 | tr -d '=/+')}"
+    local priv_key="$6"
+    local pub_key="$7"
+    local short_id="$8"
 
-    local keypair
-    keypair="$(gen_reality_keypair)"
-    local priv_key="${keypair%%:*}"
-    local pub_key="${keypair##*:}"
-    local short_id
-    short_id="$(gen_short_id)"
+    if [[ -z "$priv_key" || -z "$pub_key" ]]; then
+        local keypair
+        keypair="$(gen_reality_keypair)"
+        priv_key="${keypair%%:*}"
+        pub_key="${keypair##*:}"
+    fi
+    if [[ -z "$short_id" ]]; then
+        short_id="$(gen_short_id)"
+    fi
 
     ensure_hy2_cert
     local cert_file="${DEGWD_ETC}/cert/hy2.crt"

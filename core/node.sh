@@ -147,7 +147,7 @@ get_vless_xhttp_link() {
     local xh_port="${XHTTP_PORT:-20081}"
     local enkey="${VLESS_ENKEY:-none}"
     local tag="de_GWD-VLESS-xhttp-enc"
-    printf "vless://%s@%s:%s?encryption=%s&flow=xtls-rprx-vision&security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&type=xhttp&path=%s-xh&mode=auto#%s\n" \
+    printf "vless://%s@%s:%s?encryption=%s&security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&type=xhttp&path=%s-xh&mode=auto#%s\n" \
         "$SERVER_UUID" "$ip" "$xh_port" "$enkey" "$REALITY_SNI" "$REALITY_PUB_KEY" "$REALITY_SHORT_ID" "$SERVER_UUID" "$tag"
 }
 
@@ -161,7 +161,7 @@ get_vless_ws_link() {
     local ws_port="${WS_PORT:-20082}"
     local enkey="${VLESS_ENKEY:-none}"
     local tag="de_GWD-VLESS-ws-enc"
-    printf "vless://%s@%s:%s?encryption=%s&flow=xtls-rprx-vision&type=ws&path=%s-vw#%s\n" \
+    printf "vless://%s@%s:%s?encryption=%s&type=ws&security=none&path=%s-vw#%s\n" \
         "$SERVER_UUID" "$ip" "$ws_port" "$enkey" "$SERVER_UUID" "$tag"
 }
 
@@ -180,12 +180,9 @@ get_vless_argo_links() {
     fi
 
     local enkey="${VLESS_ENKEY:-none}"
-    # Preferred CDN IPs/Domains
-    local cdn1="www.shopify.com"
-    local cdn2="www.wto.org"
 
-    local argo_tls_link="vless://${SERVER_UUID}@${cdn1}:443?encryption=${enkey}&flow=xtls-rprx-vision&type=ws&host=${argo_domain}&path=${SERVER_UUID}-vw&security=tls&sni=${argo_domain}&fp=chrome&insecure=0&allowInsecure=0#de_GWD-Argo-TLS-443"
-    local argo_http_link="vless://${SERVER_UUID}@${cdn2}:80?encryption=${enkey}&flow=xtls-rprx-vision&type=ws&host=${argo_domain}&path=${SERVER_UUID}-vw&security=none#de_GWD-Argo-HTTP-80"
+    local argo_tls_link="vless://${SERVER_UUID}@${argo_domain}:443?encryption=${enkey}&type=ws&host=${argo_domain}&path=${SERVER_UUID}-vw&security=tls&sni=${argo_domain}&fp=chrome&insecure=0&allowInsecure=0#de_GWD-Argo-TLS-443"
+    local argo_http_link="vless://${SERVER_UUID}@${argo_domain}:80?encryption=${enkey}&type=ws&host=${argo_domain}&path=${SERVER_UUID}-vw&security=none#de_GWD-Argo-HTTP-80"
 
     printf "%s\n%s\n" "$argo_tls_link" "$argo_http_link"
 }
@@ -198,7 +195,7 @@ get_hy2_link() {
     source "$DEGWD_ENV_FILE"
 
     local tag="de_GWD-Hysteria2"
-    printf "hysteria2://%s@%s:%s/?insecure=1&sni=degwd.network#%s\n" \
+    printf "hysteria2://%s@%s:%s/?insecure=1&allowInsecure=1&sni=degwd.network#%s\n" \
         "$HY2_PASSWORD" "$ip" "$HY2_PORT" "$tag"
 }
 

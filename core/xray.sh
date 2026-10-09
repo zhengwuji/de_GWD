@@ -176,8 +176,7 @@ build_xray_server_config() {
       "settings": {
         "clients": [
           {
-            "id": "${uuid}",
-            "flow": "xtls-rprx-vision"
+            "id": "${uuid}"
           }
         ],
         "decryption": "${dekey}"
@@ -216,8 +215,7 @@ build_xray_server_config() {
       "settings": {
         "clients": [
           {
-            "id": "${uuid}",
-            "flow": "xtls-rprx-vision"
+            "id": "${uuid}"
           }
         ],
         "decryption": "${dekey}"
@@ -233,41 +231,6 @@ build_xray_server_config() {
         "destOverride": ["http", "tls", "quic"],
         "metadataOnly": false
       }
-    },
-    {
-      "tag": "reality-vision",
-      "listen": "::",
-      "port": ${vl_port},
-      "protocol": "vless",
-      "settings": {
-        "clients": [
-          {
-            "id": "${uuid}",
-            "flow": "xtls-rprx-vision"
-          }
-        ],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "reality",
-        "realitySettings": {
-          "fingerprint": "chrome",
-          "dest": "${sni}:443",
-          "serverNames": [
-            "${sni}"
-          ],
-          "privateKey": "${priv_key}",
-          "shortIds": [
-            "${short_id}"
-          ]
-        }
-      },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": ["http", "tls", "quic"],
-        "metadataOnly": false
-      }
     }
   ],
   "outbounds": [
@@ -275,7 +238,7 @@ build_xray_server_config() {
       "protocol": "freedom",
       "tag": "direct",
       "settings": {
-        "domainStrategy": "ForceIPv4v6"
+        "domainStrategy": "UseIPv4"
       }
     },
     {
@@ -288,7 +251,16 @@ build_xray_server_config() {
     "rules": [
       {
         "type": "field",
-        "ip": ["geoip:private"],
+        "ip": [
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16",
+          "127.0.0.0/8",
+          "100.64.0.0/10",
+          "169.254.0.0/16",
+          "fc00::/7",
+          "fe80::/10"
+        ],
         "outboundTag": "block"
       },
       {
